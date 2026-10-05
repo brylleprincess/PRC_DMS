@@ -1,5 +1,5 @@
 /* PRC Document Management System - styles (light + dark theme) */
-
+ 
 :root {
   --bg:#f6f7fb;
   --card:#fff;
@@ -520,7 +520,7 @@ td {
   padding-left: 52px;
   font-size: 12px;
 }
-
+ 
 /* Red notice on the login screen (wrong password / no account) */
 .alert {
   background: color-mix(in srgb, var(--rd) 12%, transparent);
@@ -530,7 +530,7 @@ td {
   text-align: center;
   font-size: 13px;
 }
-
+ 
 /* Form cards (Create user, Customize UI): title on its own line, small muted labels */
 .card-title {
   display: block;
@@ -543,7 +543,7 @@ td {
   color: var(--mu);
   font-size: 12px;
 }
-
+ 
 /* Icons (replace emoji) */
 .i {
   flex: none;
@@ -563,7 +563,7 @@ td {
 .prev span {
   text-align: center;
 }
-
+ 
 /* Customize UI page */
 .gcust {
   display: grid;
@@ -624,7 +624,7 @@ td {
   gap: 8px;
 }
 .addrow input { flex: 1; }
-
+ 
 /* Menu button: only on small screens (the sidebar is hidden there) */
 .btn.burger {
   display: none;
@@ -634,7 +634,7 @@ td {
     display: inline-flex;
   }
 }
-
+ 
 /* Form errors and required marks */
 .ferr {
   color: var(--rd);
@@ -646,7 +646,7 @@ input.bad, select.bad {
   border-color: var(--rd) !important;
 }
 .req { color: var(--rd); }
-
+ 
 /* Tables: long text wraps in its own column, dates and status never wrap */
 .reason {
   width: 240px;
@@ -655,3 +655,15 @@ input.bad, select.bad {
   overflow-wrap: anywhere;
 }
 .nw { white-space: nowrap; }
+ 
+/* Upload form and file preview */
+input[type=file] { padding: 8px 12px; }
+.modal.wide { width: min(900px, 100%); }
+.pdfview {
+  width: 100%;
+  height: 60vh;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  margin: 10px 0;
+}
+ 
