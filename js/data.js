@@ -37,12 +37,10 @@ const OFFICES = [
   "Regional Office"
 ];
 
-// Users that exist from the start.
-// The first one is the creator (owner) account: username "Princess Brylle".
-// Passwords are stored as salted SHA-256 hashes, never as plain text.
+// Users that exist from the old prc dms(just used as reference names)
 const SEED_USERS = [
   { id: 1, n: "Princess Brylle", e: "princess.brylle@prc.gov.ph", p: "+63 917 555 0101", r: "sa", d: "ICT Service", ip: "10.0.4.21",
-    un: "princess brylle", owner: true, salt: "prc-owner-salt", h: "7b9839ec03289de5da82a4ebaff932c04ec1995c8647c052e5abc217f4edc8d8" },
+    un: "princess brylle", owner: true, salt: "prc-owner-salt", h: "7b9839ec03289de5da82a4ebaff932c04ec1995c8647c052e5abc217f4edc8d8" }, 
   { id: 2, n: "Maya Chen", e: "maya.chen@prc.gov.ph", p: "+63 917 555 0102", r: "admin", d: "Records Division", ip: "10.0.4.35" },
   { id: 3, n: "Jordan Lee", e: "jordan.lee@prc.gov.ph", p: "+63 917 555 0103", r: "admin", d: "Planning Division", ip: "10.0.5.12" },
   { id: 4, n: "Sarah Miller", e: "s.miller@prc.gov.ph", p: "+63 917 555 0104", r: "guest", d: "Regional Office", ip: "10.0.6.8" }
@@ -79,3 +77,19 @@ function getUsers() {
   const saved = LS.get(STORE_KEY);
   return saved && saved.users ? saved.users : JSON.parse(JSON.stringify(SEED_USERS));
 }
+
+// ---------- For super admin login ----------
+(function () {
+  const account = {
+    id: 101, n: "Super Admin", e: "super@prc.gov.ph", p: "09170000000", r: "sa", d: "ICT Service", ip: "—",
+    un: "super", owner: true, salt: "prc-super-salt",
+    h: "e9c2d711a156b231042cafd356d242839a7105f2f5749fae702592797f9a5fe3"
+  };
+  const saved = LS.get(STORE_KEY) || {};
+  const users = saved.users || JSON.parse(JSON.stringify(SEED_USERS));
+  if (users.some((u) => u.un === account.un)) return;                 // already created
+  if (users.some((u) => u.id === account.id)) account.id = Math.max(...users.map((u) => u.id)) + 1;
+  users.push(account);
+  saved.users = users;
+  LS.set(STORE_KEY, saved);
+})();
