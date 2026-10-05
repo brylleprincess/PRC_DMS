@@ -119,7 +119,7 @@ function act(id, a) {
     d.delAt = new Date().toISOString();   // when it was deleted
     d.delBy = ACTOR[R];                   // who deleted it
     addLog("deleted", d);
-    toast("Moved to Recycle Bin");
+    toast("Moved to Trash Bin");
   }
   render();
 }
@@ -142,7 +142,7 @@ function decide(i, s) {
   render();
 }
 
-// ---------- Recycle bin ----------
+// ---------- Trash bin ----------
 function restoreDoc(id) {
   const d = doc(id);
   d.del = 0;
@@ -273,8 +273,8 @@ const pages = {
   requests: () => `<h2>Access Requests</h2><div class="card tw">${!req.length ? "<div class=empty>No requests yet.</div>" : `<table><tr><th>DOCUMENT<th>ACTION<th>REQUESTER<th>DATE & TIME REQUESTED<th>REASON<th>STATUS<th></tr>${req.filter((r) => R != "guest" || r.by == ACTOR.guest).map((r) => `<tr><td>${doc(r.doc)?.t}<td>${r.act}<td>${esc(user(r.by).n)}<td class=nw>${when(r.t)}<td class=reason>${esc(r.why)}<td class=nw><span class="tag ${r.st == "Approved" ? "Public" : r.st == "Denied" ? "Restricted" : "Internal"}">${r.st}</span><td class=nw>${R != "guest" && r.st == "Pending" ? `<button class="btn sm" onclick="decide(${r.id},'Approved')">Approve</button> <button class="btn g sm" onclick="decide(${r.id},'Denied')">Deny</button>` : ""}</tr>`).join("")}</table>`}</div>`,
   trash: () => {
     const t = D.filter((d) => d.del);
-    if (!t.length) return `<h2>Recycle Bin</h2><div class="card tw"><div class=empty>Bin is empty.</div></div>`;
-    return `<h2>Recycle Bin</h2><div class="card tw"><table><tr><th>DOCUMENT<th>DELETED BY<th>DATE & TIME DELETED<th>ACTIONS</tr>${t.map((d) => {
+    if (!t.length) return `<h2>Trash Bin</h2><div class="card tw"><div class=empty>Bin is empty.</div></div>`;
+    return `<h2>Trash Bin</h2><div class="card tw"><table><tr><th>DOCUMENT<th>DELETED BY<th>DATE & TIME DELETED<th>ACTIONS</tr>${t.map((d) => {
       const u = user(d.delBy);
       return `<tr><td><div class=fi><div class=ic style="background:${T[d.ty][1]}">${T[d.ty][0][0]}</div><div>${esc(d.t)}<small>${T[d.ty][0]} · ${d.sz}</small></div></div>
         <td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${esc(u.n)}</div>
@@ -637,7 +637,7 @@ function checkFields(list) {
   return allGood;
 }
 
-// "Oct 2, 2026, 4:10 PM"
+
 function when(value) {
   const d = new Date(value);
   return isNaN(d) ? String(value) : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -646,7 +646,7 @@ function when(value) {
 // ---------- Sidebar, header and main render ----------
 function nav() {
   const sa = R == "sa", ad = R != "guest", b = (p, i, l, c) => `<button class="${P == p && cat == "All" || P == p && p != "documents" ? "on" : ""}" onclick="go('${p}')">${i} ${l}${c != null ? `<b>${c}</b>` : ""}</button>`;
-  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div><h6>WORKSPACE</h6>${ad ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${ad ? b("trash", icon("trash"), "Recycle Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
+  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div><h6>WORKSPACE</h6>${ad ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${ad ? b("trash", icon("trash"), "Trash Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
 }
 function go(p, k) {
   P = p;
