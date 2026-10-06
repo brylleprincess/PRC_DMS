@@ -780,3 +780,40 @@ textarea {
   color: var(--mu);
   font-size: 11px;
 }
+
+/* Access control boxes and email / phone links */
+.permgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+@media (max-width: 560px) {
+  .permgrid { grid-template-columns: 1fr; }
+}
+label.permrow {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 !important;
+  color: var(--tx) !important;
+  font-size: 13px !important;
+}
+.maillink {
+  color: var(--ac);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.maillink:hover { text-decoration: underline; }
+td .maillink { white-space: nowrap; }
+.gpeople {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .gpeople { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  td .maillink { white-space: normal; }   /* on phones long emails wrap instead of scrolling */
+}

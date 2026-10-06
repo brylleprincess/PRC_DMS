@@ -103,10 +103,10 @@ function closeM() {
 function addLog(a, d) {
   log.unshift({ a, d: d.t, u: ACTOR[R], t: new Date().toISOString() });
 }
-const approved = (id, a) => req.some((r) => r.doc == id && r.act == a && r.st == "Approved" && r.by == ACTOR.guest);
+const approved = (id, a) => req.some((r) => r.doc == id && r.act == a && r.st == "Approved" && r.by == ACTOR[R]);
 async function act(id, a) {
   const d = doc(id);
-  if (R == "guest" && a != "view" && !approved(id, a)) return reqModal(id, a);
+  if (a != "view" && !can(a) && !approved(id, a)) return reqModal(id, a);
   if (a == "view") {
     d.v++;
     addLog("viewed", d);
@@ -145,12 +145,13 @@ function reqModal(id, a) {
   modal(`<h3>Request access</h3><p>Guests need approval to <b>${a}</b> “${d.t}”.</p><label>Reason</label><input id=rs placeholder="Why do you need this?"><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn g" onclick=closeM()>Cancel</button><button class=btn onclick="sendReq(${id},'${a}')">Send request</button></div>`);
 }
 function sendReq(id, a) {
-  req.unshift({ id: Date.now(), doc: id, act: a, by: ACTOR.guest, why: $("#rs").value.trim() || "—", st: "Pending", t: (/* @__PURE__ */ new Date()).toLocaleString() });
+  req.unshift({ id: Date.now(), doc: id, act: a, by: ACTOR[R], why: $("#rs").value.trim() || "—", st: "Pending", t: (/* @__PURE__ */ new Date()).toLocaleString() });
   closeM();
   toast("Request sent to admins");
   render();
 }
 function decide(i, s) {
+  if (!can("requests")) return;
   const r = req.find((x) => x.id == i);
   r.st = s;
   toast("Request " + s.toLowerCase());
@@ -159,6 +160,7 @@ function decide(i, s) {
 
 // ---------- Recycle bin ----------
 function restoreDoc(id) {
+  if (!can("trash")) return toast("You do not have access to the Recycle Bin.");
   const d = doc(id);
   d.del = 0;
   delete d.delAt;
@@ -193,7 +195,7 @@ function purgeDoc(id) {
 // ---------- Owner profile popup (contact details: Super Admin only) ----------
 function profile(id) {
   const u = user(id), sa = R == "sa";
-  modal(`<h3><span class=av>${ini(u.n)}</span>${u.n}</h3><div class=kv><span>Role</span>${RN[u.r]}${u.r === "guest" ? "" : `<span>Office / Division</span>${u.d}`}${sa ? `<span>Email</span>${u.e}<span>Phone</span>${u.p}<span>Last IP</span>${u.ip}` : "<span>Contact</span>Visible to Super Admin only"}</div><div style="text-align:right;margin-top:14px"><button class=btn onclick=closeM()>Close</button></div>`);
+  modal(`<h3><span class=av>${ini(u.n)}</span>${u.n}</h3><div class=kv><span>Role</span>${RN[u.r]}${u.r === "guest" ? "" : `<span>Office / Division</span>${u.d}`}${sa ? `<span>Email</span>${mailLink(u.e)}<span>Phone</span>${telLink(u.p)}<span>Last IP</span>${u.ip}` : "<span>Contact</span>Visible to Super Admin only"}</div><div style="text-align:right;margin-top:14px"><button class=btn onclick=closeM()>Close</button></div>`);
 }
 
 // ---------- Dashboard widgets (stats, chart, top documents) ----------
@@ -224,7 +226,7 @@ function topDocs() {
 
 // ---------- Documents table ----------
 function btns(d) {
-  const g = R == "guest", l = (a, i, t) => `<button title="${t}${g && a != "view" && !approved(d.id, a) ? " (request)" : ""}" onclick="act(${d.id},'${a}')">${i}${g && a != "view" && !approved(d.id, a) ? icon("lock", 10) : ""}</button>`;
+  const l = (a, i, t) => `<button title="${t}${a != "view" && !can(a) && !approved(d.id, a) ? " (request)" : ""}" onclick="act(${d.id},'${a}')">${i}${a != "view" && !can(a) && !approved(d.id, a) ? icon("lock", 10) : ""}</button>`;
   return `<div class=act>${l("view", icon("eye"), "View")}${l("download", icon("download"), "Download")}${l("print", icon("printer"), "Print")}${R != "guest" ? "" : ""}${l("edit", icon("edit"), "Edit")}${l("delete", icon("trash"), "Delete")}</div>`;
 }
 function rows(list) {
@@ -252,7 +254,7 @@ function clearSel() { sel.clear(); render(); }
 function selBar() {
   const list = selDocs();
   if (!list.length) return "";
-  const lock = (a) => (R == "guest" && list.some((d) => !approved(d.id, a)) ? " " + icon("lock", 10) : "");
+  const lock = (a) => (!can(a) && list.some((d) => !approved(d.id, a)) ? " " + icon("lock", 10) : "");
   return `<div class=selbar><b>${list.length} selected</b>
     <button class="btn sm" onclick="bulkDownload()">${icon("download", 14)} Download${lock("download")}</button>
     <button class="btn sm" onclick="bulkShare()">${icon("share", 14)} Share${lock("share")}</button>
@@ -262,7 +264,7 @@ function selBar() {
 
 // Guests need an approved request for every file before they can do an action
 function guestBlocked(list, action) {
-  if (R != "guest") return false;
+  if (can(action)) return false;
   const first = list.find((d) => !approved(d.id, action));
   if (!first) return false;
   const n = list.filter((d) => !approved(d.id, action)).length;
@@ -385,7 +387,7 @@ async function zipDl(list, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
 }
 function bulk() {
-  if (R == "guest") return toast("Guests must request download access per file");
+  if (!can("download")) return toast("You need download access. Send a request for each file first.");
   const l = filt();
   if (!l.length) return toast("No files to download");
   l.forEach((d) => {
@@ -411,12 +413,12 @@ function pick(i, j) {
 
 // ---------- Pages ----------
 const pages = {
-  overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${sharedCard()}${dbar()}${R != "guest" ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
+  overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${sharedCard()}${dbar()}${can("analytics") ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
   search: () => searchPage(),
   elibrary: () => libraryPage(),
   documents: () => `<h2>${cat == "All" ? "All Documents" : cat + (sub ? " › " + sub : "")}</h2><div class=card>${filters()}${rows(filt())}</div>`,
   analytics: () => `<h2>Analytics</h2>${dbar()}${stats()}<div class="grid g2">${chart()}${topDocs()}</div>`,
-  requests: () => `<h2>Access Requests</h2><div class="card tw">${!req.length ? "<div class=empty>No requests yet.</div>" : `<table><tr><th>DOCUMENT<th>ACTION<th>REQUESTER<th>DATE & TIME REQUESTED<th>REASON<th>STATUS<th></tr>${req.filter((r) => R != "guest" || r.by == ACTOR.guest).map((r) => `<tr><td>${doc(r.doc)?.t}<td>${r.act}<td>${esc(user(r.by).n)}<td class=nw>${when(r.t)}<td class=reason>${esc(r.why)}<td class=nw><span class="tag ${r.st == "Approved" ? "Public" : r.st == "Denied" ? "Restricted" : "Internal"}">${r.st}</span><td class=nw>${R != "guest" && r.st == "Pending" ? `<button class="btn sm" onclick="decide(${r.id},'Approved')">Approve</button> <button class="btn g sm" onclick="decide(${r.id},'Denied')">Deny</button>` : ""}</tr>`).join("")}</table>`}</div>`,
+  requests: () => `<h2>Access Requests</h2><div class="card tw">${!req.length ? "<div class=empty>No requests yet.</div>" : `<table><tr><th>DOCUMENT<th>ACTION<th>REQUESTER<th>DATE & TIME REQUESTED<th>REASON<th>STATUS<th></tr>${req.filter((r) => can("requests") || r.by == ACTOR[R]).map((r) => `<tr><td>${doc(r.doc)?.t}<td>${r.act}<td>${esc(user(r.by).n)}<td class=nw>${when(r.t)}<td class=reason>${esc(r.why)}<td class=nw><span class="tag ${r.st == "Approved" ? "Public" : r.st == "Denied" ? "Restricted" : "Internal"}">${r.st}</span><td class=nw>${can("requests") && r.st == "Pending" ? `<button class="btn sm" onclick="decide(${r.id},'Approved')">Approve</button> <button class="btn g sm" onclick="decide(${r.id},'Denied')">Deny</button>` : ""}</tr>`).join("")}</table>`}</div>`,
   trash: () => {
     const t = D.filter((d) => d.del);
     if (!t.length) return `<h2>Recycle Bin</h2><div class="card tw"><div class=empty>Bin is empty.</div></div>`;
@@ -432,7 +434,7 @@ const pages = {
     const u = user(l.u);
     return `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td class=nw>${l.a}<td>${esc(l.d)}<td>${u.e} · ${u.ip}<td class=nw>${when(l.t, true)}</tr>`;
   }).join("")}</table>`}</div>`,
-  people: () => `<h2>People & Access</h2><div class="grid g2"><div class="card tw"><table><tr><th>NAME<th>EMAIL<th>USERNAME<th>ROLE<th>OFFICE / DIVISION<th>ACTIONS</tr>${U.map((u) => `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${u.e}<td>${u.un || "—"}<td>${RN[u.r]}<td>${u.d}<td>${userBtns(u)}</tr>`).join("")}</table></div><div class=card><b class="card-title">Create user</b><p class=note>All fields are required.</p>${field("un", "Full name", "", "e.g. Juan Dela Cruz")}${field("ue", "Email", "", "name@prc.gov.ph")}${field("uc", "Contact number", "", "09XXXXXXXXX or +639XXXXXXXXX")}${field("uu", "Username", "", "3-20 letters, numbers, . or _")}${field("up", "Password", "password", "8+ characters with a letter and a number")}<label>Role</label><select id=ur style="width:100%" onchange="toggleOffice()"><option value=admin>Admin<option value=guest>Guest User<option value=sa>Super Admin</select><div id=uo><label>Office / Division</label><select id=ud style="width:100%">${OFFICES.map((o) => `<option>${o}`).join("")}</select></div><br><br><button class=btn onclick=addU()>Create user</button></div></div>`,
+  people: () => `<h2>People & Access</h2><div class=gpeople><div class="card tw"><table><tr><th>NAME<th>EMAIL<th>USERNAME<th>ROLE<th>OFFICE / DIVISION<th>ACTIONS</tr>${U.map((u) => `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${mailLink(u.e)}<td>${u.un || "—"}<td>${RN[u.r]}<td>${u.d}<td>${userBtns(u)}</tr>`).join("")}</table></div><div class=card><b class="card-title">Create user</b><p class=note>All fields are required.</p>${field("un", "Full name", "", "e.g. Juan Dela Cruz")}${field("ue", "Email", "", "name@prc.gov.ph")}${field("uc", "Contact number", "", "09XXXXXXXXX or +639XXXXXXXXX")}${field("uu", "Username", "", "3-20 letters, numbers, . or _")}${field("up", "Password", "password", "8+ characters with a letter and a number")}<label>Role</label><select id=ur style="width:100%" onchange="toggleOffice(); fillPerms('pc', 'ur', 'ud')"><option value=admin>Admin<option value=guest>Guest User<option value=sa>Super Admin</select><div id=uo><label>Office / Division</label><select id=ud style="width:100%" onchange="officeChanged('pc', 'ur', 'ud')">${OFFICES.map((o) => `<option>${o}`).join("")}</select></div>${permBox("pc", { r: "admin", d: OFFICES[0] })}<br><br><button class=btn onclick=addU()>Create user</button></div></div>`,
   settings: () => `<h2>Customize UI</h2><div class=gcust>${appearanceCard()}${categoryManager()}</div>`
 };
 
@@ -466,6 +468,7 @@ async function addU() {
     n: name, e: email, p: phone, r: role, d: role === "guest" ? "—" : $("#ud").value, ip: "—",
     un: username, salt, h: await hash(password, salt)
   });
+  if (role !== "sa") U[U.length - 1].perms = tickedPerms("pc");   // what the Super Admin ticked
   toast("User created: " + name + " (they can now sign in)");
   render();
 }
@@ -492,13 +495,14 @@ function editUser(id) {
     ${field("eu", "Username", "", "", u.un || "", !!u.un)}
     ${field("ep", "New password (leave blank to keep the current one)", "password", "", "", false)}
     <label>Role</label>
-    <select id=er style="width:100%" onchange="toggleEditOffice()" ${lockRole ? "disabled" : ""}>
+    <select id=er style="width:100%" onchange="toggleEditOffice(); fillPerms('pe', 'er', 'eo')" ${lockRole ? "disabled" : ""}>
       ${Object.keys(RN).map((k) => `<option value=${k} ${u.r === k ? "selected" : ""}>${RN[k]}`).join("")}
     </select>
     <div id=eoff style="${u.r === "guest" ? "display:none" : ""}">
       <label>Office / Division</label>
-      <select id=eo style="width:100%">${OFFICES.map((o) => `<option ${o === u.d ? "selected" : ""}>${o}`).join("")}</select>
+      <select id=eo style="width:100%" onchange="officeChanged('pe', 'er', 'eo')">${OFFICES.map((o) => `<option ${o === u.d ? "selected" : ""}>${o}`).join("")}</select>
     </div>
+    ${permBox("pe", u)}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="btn g" onclick=closeM()>Cancel</button>
       <button class=btn onclick="saveUser(${u.id})">Save changes</button>
@@ -538,6 +542,8 @@ async function saveUser(id) {
   }
   if (!u.owner && u.id !== SESSION.id) u.r = $("#er").value;
   u.d = u.r === "guest" ? "—" : $("#eo").value;
+  if (u.r === "sa") delete u.perms;
+  else if (!u.owner) u.perms = tickedPerms("pe");   // what the Super Admin ticked
 
   closeM();
   toast("Saved changes for " + u.n);
@@ -843,7 +849,7 @@ async function showPreview(d) {
     const note = blob ? "No preview for ." + ext + " files. Download it to open." : d.ty.toUpperCase() + " preview · " + d.sz;
     body = `<div class=prev><span>${icon("file", 28)}<br>${note}</span></div>`;
   }
-  const askFirst = R == "guest" && !approved(d.id, "download");
+  const askFirst = !can("download") && !approved(d.id, "download");
   modal(`<h3>${esc(d.t)} <span class="tag Internal">${rev2(d.rev)}</span></h3>${body}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn g" onclick=closeM()>Close</button>
@@ -960,7 +966,7 @@ function showHistory(id) {
 
 // Download one revision (inside its category folder). Guests still need approval.
 async function dlRev(id, i) {
-  if (R == "guest" && !approved(id, "download")) return reqModal(id, "download");
+  if (!can("download") && !approved(id, "download")) return reqModal(id, "download");
   const d = doc(id), list = history(d), e = list[i];
   const blob = e.key ? await fileGet(e.key) : i == list.length - 1 && d.hasFile ? await fileGet(d.id) : null;
   if (!blob) return toast("This version has no stored file (sample document).");
@@ -1032,6 +1038,10 @@ function leaveSearch() {
 
 function onSearch(value) {
   q = value;
+  if (P == "elibrary") {   // on the E-Library page the top search box filters the materials
+    libQ = value;
+    return libRefresh();
+  }
   clearTimeout(window.tm);
   window.tm = setTimeout(() => {
     if (q.trim()) {
@@ -1084,8 +1094,7 @@ let libPending = [];                 // files chosen in the upload popup, not up
 // Super Admin, and Admins who belong to Human Resource Development, can add and manage materials.
 // Everyone else can only look at them.
 function libCanUpload() {
-  if (SESSION.role === "sa") return true;
-  return R === "admin" && user(ACTOR[R]).d === HR_OFFICE;
+  return can("lib_upload");
 }
 
 const extOf = (name) => (name.includes(".") ? name.split(".").pop().toLowerCase() : "");
@@ -1110,13 +1119,11 @@ function libraryPage() {
   const total = LIB.reduce((n, m) => n + m.size, 0);
   return `<h2>E-Library</h2><div class=card>
     <div class=filters>
-      <input placeholder="Search review materials…" value="${esc(libQ)}" oninput="libQ = this.value; libRefresh()" style="max-width:280px">
       <select onchange="libTopic = this.value; libRefresh()"><option value="">All topics${topics.map((t) => `<option ${libTopic === t ? "selected" : ""}>${esc(t)}`).join("")}</select>
       <select onchange="libType = this.value; libRefresh()"><option value="">All file types${types.map((t) => `<option ${libType === t ? "selected" : ""}>${esc(t)}`).join("")}</select>
       <span class=docn style="margin-left:auto">${LIB.length} material(s) · ${fmtSize(total)}</span>
-      ${libCanUpload() ? `<button class=btn onclick="libUploadModal()">${icon("plus", 14)} Upload materials</button>` : ""}
     </div>
-    ${libCanUpload() ? "" : `<p class=note>Only the Human Resource Development Division can add review materials. You can view them here.</p>`}
+    ${libCanUpload() ? "" : `<p class=note>Only people given upload access (for example Human Resource Development) can add review materials.</p>`}
     <div id=libResults>${libRows()}</div></div>`;
 }
 
@@ -1139,10 +1146,49 @@ function libRows() {
       <td class=nw>${when(m.dt)}<td>${m.dl}
       <td class=nw><div class=act>
         <button title="View" onclick="libView(${m.id})">${icon("eye")}</button>
-        <button title="${R == "guest" ? "Download (guests can view only)" : "Download"}" onclick="libDownload(${m.id})">${icon("download")}${R == "guest" ? icon("lock", 10) : ""}</button>
+        <button title="${can("lib_download") ? "Download" : "Download (no access)"}" onclick="libDownload(${m.id})">${icon("download")}${can("lib_download") ? "" : icon("lock", 10)}</button>
         ${manage ? `<button title="Edit" onclick="libEdit(${m.id})">${icon("edit")}</button><button title="Delete" onclick="libDelete(${m.id})">${icon("trash")}</button>` : ""}
       </div></tr>`;
   }).join("")}</table></div>`;
+}
+
+// ----- Who can use the E-Library (Super Admin and library managers decide) -----
+// Opens the View / Download / Upload table for the E-Library (no button on the page now;
+// the Super Admin sets the same access in People & Access > Edit user).
+function libAccessModal() {
+  if (!can("lib_upload")) return;
+  const isSA = SESSION.role === "sa";
+  const people = U.filter((u) => u.r !== "sa" && u.id !== ACTOR[R]);
+  modal(`<h3>E-Library access</h3>
+    <p class=note>Tick what each person may do in the E-Library.${isSA ? "" : " Only the Super Admin can give upload access."}</p>
+    <div class=tw><table><tr><th>PERSON<th>VIEW<th>DOWNLOAD<th>UPLOAD</tr>${people.map((u) => {
+      const on = permsOf(u);
+      return `<tr><td>${esc(u.n)}<small style="display:block;color:var(--mu)">${RN[u.r]}${u.d && u.d !== "—" ? " · " + esc(u.d) : ""}</small>
+        <td><input type=checkbox id=la${u.id}_v ${on.includes("lib_view") ? "checked" : ""}>
+        <td><input type=checkbox id=la${u.id}_d ${on.includes("lib_download") ? "checked" : ""}>
+        <td><input type=checkbox id=la${u.id}_u ${on.includes("lib_upload") ? "checked" : ""} ${isSA ? "" : "disabled"}></tr>`;
+    }).join("")}</table></div>
+    ${people.length ? "" : "<div class=empty>No other people yet.</div>"}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class=btn onclick="libAccessSave()">Save access</button>
+    </div>`, true);
+}
+
+function libAccessSave() {
+  if (!can("lib_upload")) return;
+  U.filter((u) => u.r !== "sa" && u.id !== ACTOR[R] && $("#la" + u.id + "_v")).forEach((u) => {
+    const keep = permsOf(u).filter((k) => !k.startsWith("lib_"));
+    const view = $("#la" + u.id + "_v").checked, down = $("#la" + u.id + "_d").checked, up = $("#la" + u.id + "_u").checked;
+    const lib = [];
+    if (view || down || up) lib.push("lib_view");
+    if (down) lib.push("lib_download");
+    if (up) lib.push("lib_upload");
+    u.perms = [...keep, ...lib];
+  });
+  closeM();
+  toast("E-Library access saved");
+  render();
 }
 
 // ----- Upload (several files at once, any file type) -----
@@ -1243,12 +1289,12 @@ async function libView(id) {
     <p class=note style="margin-top:8px">${esc(m.fn)} · ${m.sz}${m.topic ? " · " + esc(m.topic) : ""}</p>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn g" onclick=closeM()>Close</button>
-      ${R == "guest" ? "" : `<button class=btn onclick="libDownload(${id})">${icon("download", 14)} Download</button>`}
+      ${!can("lib_download") ? "" : `<button class=btn onclick="libDownload(${id})">${icon("download", 14)} Download</button>`}
     </div>`, true);
 }
 
 async function libDownload(id) {
-  if (R == "guest") return toast("Guests can view review materials but cannot download them.");
+  if (!can("lib_download")) return toast("You can view this material but do not have download access. Ask the Super Admin or HR.");
   const m = LIB.find((x) => x.id === id);
   const stored = await fileGet("lib:" + id);
   if (!stored) return toast("This file is not stored in this browser.");
@@ -1305,13 +1351,77 @@ function libDoDelete(id) {
   render();
 }
 
+// ---------- Access control: what each person may do (set by the Super Admin) ----------
+const PERMS = [
+  ["download", "Download files"],
+  ["print", "Print files"],
+  ["edit", "Edit / update files"],
+  ["delete", "Delete files"],
+  ["share", "Share files"],
+  ["upload", "Upload new documents"],
+  ["trash", "Use the Recycle Bin (restore)"],
+  ["analytics", "See analytics"],
+  ["requests", "Approve / deny access requests"],
+  ["lib_view", "E-Library: view materials"],
+  ["lib_download", "E-Library: download materials"],
+  ["lib_upload", "E-Library: upload and manage"]
+];
+
+// What a new Admin / Guest gets until the Super Admin changes it
+const DEFAULT_PERMS = {
+  admin: ["download", "print", "edit", "delete", "share", "upload", "trash", "analytics", "requests", "lib_view", "lib_download"],
+  guest: []
+};
+
+// The Super Admin can do everything. Others get their ticked list (or the default for their role).
+// Admins in Human Resource Development can also upload to the E-Library by default.
+function permsOf(u) {
+  if (u.r === "sa") return PERMS.map((p) => p[0]);
+  const base = u.perms || [...(DEFAULT_PERMS[u.r] || []), ...(u.r === "admin" && u.d === HR_OFFICE ? ["lib_upload"] : [])];
+  const list = new Set(base);
+  if (list.has("lib_upload") || list.has("lib_download")) list.add("lib_view");
+  return [...list];
+}
+
+// Can the person using this page do this?
+const can = (perm) => permsOf(user(ACTOR[R])).includes(perm);
+
+// The tick boxes shown when creating or editing a person
+function permBox(prefix, u) {
+  const on = permsOf(u);
+  return `<div id=${prefix}_box style="${u.r === "sa" ? "display:none" : ""}">
+    <label>Access control (tick what this person may do)</label>
+    <div class=permgrid>${PERMS.map(([k, label]) => `<label class=permrow><input type=checkbox id=${prefix}_${k} ${on.includes(k) ? "checked" : ""}> ${label}</label>`).join("")}</div>
+    <p class=note style="margin:2px 0 0">For file actions, an unticked box means they must send a request first.</p></div>`;
+}
+
+// Role changed: tick the default boxes for that role
+function fillPerms(prefix, roleId, officeId) {
+  const role = $("#" + roleId).value, office = $("#" + officeId) ? $("#" + officeId).value : "";
+  const on = permsOf({ r: role, d: role === "guest" ? "—" : office });
+  PERMS.forEach(([k]) => { $("#" + prefix + "_" + k).checked = on.includes(k); });
+  $("#" + prefix + "_box").style.display = role === "sa" ? "none" : "";
+}
+
+// Choosing the HR office ticks "E-Library: upload and manage"
+function officeChanged(prefix, roleId, officeId) {
+  if ($("#" + roleId).value === "admin" && $("#" + officeId).value === HR_OFFICE) $("#" + prefix + "_lib_upload").checked = true;
+}
+
+const tickedPerms = (prefix) => PERMS.map((p) => p[0]).filter((k) => $("#" + prefix + "_" + k).checked);
+
+// Email and phone as links: tapping opens the mail app or the dialer
+const mailLink = (e) => (e && e !== "—" ? `<a class=maillink href="mailto:${esc(e)}">${esc(e)}</a>` : "—");
+const telLink = (p) => (p && p !== "—" ? `<a class=maillink href="tel:${esc(p.replace(/[^+\d]/g, ""))}">${esc(p)}</a>` : "—");
+
 // ---------- Sidebar, header and main render ----------
 function nav() {
   const sa = R == "sa", ad = R != "guest", b = (p, i, l, c) => `<button class="${P == p && cat == "All" || P == p && p != "documents" ? "on" : ""}" onclick="go('${p}')">${i} ${l}${c != null ? `<b>${c}</b>` : ""}</button>`;
-  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}${b("elibrary", icon("book"), "E-Library", LIB.length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div><h6>WORKSPACE</h6>${ad ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${ad ? b("trash", icon("trash"), "Recycle Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
+  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div>${can("lib_view") ? `<h6>LIBRARY</h6>${b("elibrary", icon("book"), "E-Library", LIB.length)}` : ""}<h6>WORKSPACE</h6>${can("analytics") ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${can("trash") ? b("trash", icon("trash"), "Recycle Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
 }
 function go(p, k) {
   P = p;
+  libQ = "";
   sel.clear();
   beforeSearch = null;
   if (p != "search") q = "";   // leaving the search page clears the search
@@ -1328,9 +1438,10 @@ function render() {
   $("#lg").innerHTML = "";
   $("#app").style.display = "flex";
   const u = user(ACTOR[R]);
-  if (R == "guest" && ["analytics", "activity", "people", "settings", "trash"].includes(P) || R == "admin" && ["activity", "people", "settings"].includes(P)) P = "overview";
+  const pageOk = { analytics: () => can("analytics"), trash: () => can("trash"), elibrary: () => can("lib_view"), activity: () => R == "sa", people: () => R == "sa", settings: () => R == "sa" };
+  if (pageOk[P] && !pageOk[P]()) P = "overview";
   $("#sb").innerHTML = nav();
-  $("#hd").innerHTML = `<button class="btn g burger" onclick="$('#sb').classList.toggle('open')">${icon("menu", 18)}</button><input class=s placeholder="Search by keyword or file name…" value="${q}" oninput="onSearch(this.value)"><span class="tag Internal">${RN[R]}</span>${R != "guest" ? `<button class=btn onclick="upl()">${icon("plus", 14)} New document</button>` : ""}<span class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</span><button class="btn g sm" onclick=logout()>Log out</button>`;
+  $("#hd").innerHTML = `<button class="btn g burger" onclick="$('#sb').classList.toggle('open')">${icon("menu", 18)}</button><input class=s placeholder="${P == "elibrary" ? "Search review materials…" : "Search by keyword or file name…"}" value="${q}" oninput="onSearch(this.value)"><span class="tag Internal">${RN[R]}</span>${P == "elibrary" ? (can("lib_upload") ? `<button class=btn onclick="libUploadModal()">${icon("plus", 14)} Upload materials</button>` : "") : can("upload") ? `<button class=btn onclick="upl()">${icon("plus", 14)} New document</button>` : ""}<span class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</span><button class="btn g sm" onclick=logout()>Log out</button>`;
   $("#pg").innerHTML = pages[P]();
 }
 
@@ -1407,6 +1518,7 @@ async function saveDoc(id) {
 
 // ---------- Posting a new document ----------
 function upl() {
+  if (!can("upload")) return toast("You do not have permission to upload documents.");
   if (!Object.keys(CAT).length) return toast("Add a category first (Customize UI)");
   modal(`<h3>New document</h3>
     <label>File <span class=req>*</span></label>
