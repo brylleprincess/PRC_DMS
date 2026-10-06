@@ -2,27 +2,40 @@
  * PRC Document Management System
  * App logic shared by SuperAdmin.html, Admin.html and GuestUser.html
  */
- 
+
 // ---------- Helpers & sample data ----------
 const $ = (s) => document.querySelector(s);
 const T = { pdf: ["PDF", "#e86a6a"], docx: ["DOCX", "#4a82cc"], xlsx: ["XLSX", "#3f9a6e"], pptx: ["PPTX", "#e07f45"] };
- 
+
 // Users (sample data lives in js/data.js)
 let U = SEED_USERS;
- 
+
 // Documents (sample data)
 // [id, title, category, type, size, owner id, date, views, downloads, access, sub-category]
 let D = [
   [1, "00. Training Database 1st SEM 2023", "Reports", "xlsx", "4.8 MB", 3, "2023-07-17", 51, 12, "Internal", "Physical Annex A"],
   [2, "1 - Cover Page", "ISO", "pdf", "1.1 MB", 2, "2022-12-19", 204, 31, "Public", "Policy Manual"],
-  [3, "QPM-BAG-ix Manual Revision", "ISO", "docx", "2.4 MB", 2, "2019-01-04", 129, 18, "Internal", "Policy Manual"],
+  [3, "QPM-BAG-ix Manual Version", "ISO", "docx", "2.4 MB", 2, "2019-01-04", 129, 18, "Internal", "Policy Manual"],
   [4, "Regional Issuance No. 2024-07", "Regional Issuances", "pdf", "3.2 MB", 3, "2024-11-12", 318, 74, "Public", "Office Order"],
   [5, "Commission Resolution No. 1241", "Commission Issuances", "pdf", "2.0 MB", 1, "2024-12-10", 647, 138, "Restricted", "Resolutions"],
   [6, "PRB Guidelines v3", "PRB Issuances", "docx", "2.4 MB", 2, "2024-12-12", 892, 205, "Public", ""],
   [7, "RBAC Implementation Plan", "RBAC", "pptx", "14.6 MB", 3, "2024-12-16", 316, 74, "Restricted", ""],
   [8, "Q4 Financial Report", "Reports", "pdf", "8.2 MB", 2, "2024-12-18", 428, 92, "Internal", "OPCR Accomplishments"]
 ].map((a) => ({ id: a[0], t: a[1], c: a[2], ty: a[3], sz: a[4], o: a[5], dt: a[6], v: a[7], dl: a[8], ac: a[9], s: a[10] || "", del: 0 }));
- 
+
+// Keywords for the sample documents (new documents get theirs from the upload form)
+const SEED_KW = {
+  1: ["training", "database", "semester", "seminar"],
+  2: ["cover page", "quality manual", "policy manual", "iso 9001"],
+  3: ["qpm", "manual revision", "quality management"],
+  4: ["regional issuance", "office order", "regional director"],
+  5: ["commission", "resolution", "chairperson", "commissioner"],
+  6: ["prb", "guidelines", "professional regulatory board"],
+  7: ["rbac", "implementation plan", "roadmap", "access control"],
+  8: ["financial", "budget", "q4", "opcr", "accomplishments"]
+};
+D.forEach((d) => { d.kw = SEED_KW[d.id] || []; });
+
 // Category tree: parent category -> sub-categories
 const CAT = {
   "ISO": ["Forms", "Quality Procedures", "Policy Manual", "Risk Management", "SWOT Analysis", "Interested Parties", "Masterlist of Rec/Docs", "Quality Objectives", "Management Review", "Charts"],
@@ -33,15 +46,15 @@ const CAT = {
   "Reports": ["Client Feedback", "Physical Annex A", "Physical Annex B", "KPI ORD", "KPI LRD", "KPI FAD", "KPI REGU", "OPCR Targets", "OPCR Accomplishments", "Success Indicators"]
 };
 const MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
- 
+
 // ---------- App state ----------
 // ROLE is set by each page (SuperAdmin.html / Admin.html / GuestUser.html)
 let R = window.ROLE || "sa", P = "overview", cat = "All", sub = "", df = "", dtt = "", mo = "", yr = "", op = {}, q = "", ft = "", fa = "", req = [], log = [], nid = 9;
 const ACTOR = { sa: 1, admin: 2, guest: 4 }, RN = { sa: "Super Admin", admin: "Admin", guest: "Guest User" };
- 
+
 // ---------- Login / account setup (Super Admin only) ----------
 const LOGO = "assets/prc-logo.png";
- 
+
 // ---------- Shared storage ----------
 // Keeps documents, requests and activity in sync between the three role pages
 function saveState() {
@@ -61,12 +74,12 @@ function loadState() {
     Object.assign(CAT, s.CAT);
   }
 }
- 
- 
+
+
 // ---------- Lookups ----------
 const user = (id) => U.find((u) => u.id == id) || { id, n: "Deleted user", e: "—", p: "—", r: "guest", d: "—", ip: "—" }, ini = (n) => n.split(" ").map((x) => x[0]).join("");
 const doc = (id) => D.find((d) => d.id == id);
- 
+
 // ---------- UI helpers: toast + modal ----------
 function toast(m) {
   const e = document.createElement("div");
@@ -83,7 +96,7 @@ function closeM() {
   $("#md").innerHTML = "";
   if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
 }
- 
+
 // ---------- Actions: view / download / print / edit / delete ----------
 function addLog(a, d) {
   log.unshift({ a, d: d.t, u: ACTOR[R], t: new Date().toISOString() });
@@ -123,7 +136,7 @@ async function act(id, a) {
   }
   render();
 }
- 
+
 // ---------- Guest access-request workflow ----------
 function reqModal(id, a) {
   const d = doc(id);
@@ -141,7 +154,7 @@ function decide(i, s) {
   toast("Request " + s.toLowerCase());
   render();
 }
- 
+
 // ---------- Recycle bin ----------
 function restoreDoc(id) {
   const d = doc(id);
@@ -152,7 +165,7 @@ function restoreDoc(id) {
   toast("Restored " + d.t);
   render();
 }
- 
+
 // Permanent delete always asks first
 function confirmPurge(id) {
   const d = doc(id);
@@ -163,23 +176,24 @@ function confirmPurge(id) {
       <button class="btn r" onclick="purgeDoc(${id})">Yes, delete permanently</button>
     </div>`);
 }
- 
+
 function purgeDoc(id) {
   const d = doc(id);
   addLog("permanently deleted", d);
   D = D.filter((x) => x.id != id);
   fileDelete(id).catch(() => {});
+  (d.history || []).forEach((e) => e.key && fileDelete(e.key).catch(() => {}));   // old revisions too
   closeM();
   toast("Permanently deleted " + d.t);
   render();
 }
- 
+
 // ---------- Owner profile popup (contact details: Super Admin only) ----------
 function profile(id) {
   const u = user(id), sa = R == "sa";
   modal(`<h3><span class=av>${ini(u.n)}</span>${u.n}</h3><div class=kv><span>Role</span>${RN[u.r]}${u.r === "guest" ? "" : `<span>Office / Division</span>${u.d}`}${sa ? `<span>Email</span>${u.e}<span>Phone</span>${u.p}<span>Last IP</span>${u.ip}` : "<span>Contact</span>Visible to Super Admin only"}</div><div style="text-align:right;margin-top:14px"><button class=btn onclick=closeM()>Close</button></div>`);
 }
- 
+
 // ---------- Dashboard widgets (stats, chart, top documents) ----------
 function stats() {
   const a = ovDocs(), s = (k) => a.reduce((x, d) => x + d[k], 0);
@@ -205,7 +219,7 @@ function topDocs() {
   const t = [...ovDocs()].sort((a, b) => b.v - a.v).slice(0, 5);
   return `<div class=card><b>Top documents</b><ul class=top>${t.map((d) => `<li><span>${d.t}</span><b>${d.v}</b></li>`).join("")}</ul></div>`;
 }
- 
+
 // ---------- Documents table ----------
 function btns(d) {
   const g = R == "guest", l = (a, i, t) => `<button title="${t}${g && a != "view" && !approved(d.id, a) ? " (request)" : ""}" onclick="act(${d.id},'${a}')">${i}${g && a != "view" && !approved(d.id, a) ? icon("lock", 10) : ""}</button>`;
@@ -215,10 +229,10 @@ function rows(list) {
   if (!list.length) return "<div class=empty>No documents found.</div>";
   return `<div class=tw><table><tr><th>DOCUMENT<th>OWNER<th>DATE POSTED<th>VIEWS<th>DOWNLOADS<th>ACCESS<th>ACTIONS</tr>${list.map((d) => {
     const u = user(d.o), t = T[d.ty];
-    return `<tr><td><div class=fi><div class=ic style="background:${t[1]}">${t[0][0]}</div><div>${d.t}<small>${t[0]} · ${d.sz} · ${d.c}${d.s ? " › " + d.s : ""}</small></div></div><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${d.dt}<td>${d.v}<td>${d.dl}<td><span class="tag ${d.ac}">${d.ac}</span><td>${btns(d)}</tr>`;
+    return `<tr><td><div class=fi><div class=ic style="background:${t[1]}">${t[0][0]}</div><div>${esc(d.t)} <span class="tag Internal rev" title="Version history" onclick="showHistory(${d.id})">${rev2(d.rev)}</span><small>${t[0]} · ${d.sz} · ${d.c}${d.s ? " › " + d.s : ""}</small></div></div><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${d.dt}<td>${d.v}<td>${d.dl}<td><span class="tag ${d.ac}">${d.ac}</span><td>${btns(d)}</tr>`;
   }).join("")}</table></div>`;
 }
- 
+
 // ---------- Search, filters and zip download ----------
 function filt() {
   return D.filter((d) => !d.del && (cat == "All" || d.c == cat) && (!sub || d.s == sub) && (!ft || d.ty == ft) && (!fa || d.ac == fa) && (!df || d.dt >= df) && (!dtt || d.dt <= dtt) && d.t.toLowerCase().includes(q.toLowerCase()));
@@ -267,10 +281,11 @@ function pick(i, j) {
   sub = CAT[cat][j];
   go("documents", 1);
 }
- 
+
 // ---------- Pages ----------
 const pages = {
   overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${dbar()}${R != "guest" ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
+  search: () => searchPage(),
   documents: () => `<h2>${cat == "All" ? "All Documents" : cat + (sub ? " › " + sub : "")}</h2><div class=card>${filters()}${rows(filt())}</div>`,
   analytics: () => `<h2>Analytics</h2>${dbar()}${stats()}<div class="grid g2">${chart()}${topDocs()}</div>`,
   requests: () => `<h2>Access Requests</h2><div class="card tw">${!req.length ? "<div class=empty>No requests yet.</div>" : `<table><tr><th>DOCUMENT<th>ACTION<th>REQUESTER<th>DATE & TIME REQUESTED<th>REASON<th>STATUS<th></tr>${req.filter((r) => R != "guest" || r.by == ACTOR.guest).map((r) => `<tr><td>${doc(r.doc)?.t}<td>${r.act}<td>${esc(user(r.by).n)}<td class=nw>${when(r.t)}<td class=reason>${esc(r.why)}<td class=nw><span class="tag ${r.st == "Approved" ? "Public" : r.st == "Denied" ? "Restricted" : "Internal"}">${r.st}</span><td class=nw>${R != "guest" && r.st == "Pending" ? `<button class="btn sm" onclick="decide(${r.id},'Approved')">Approve</button> <button class="btn g sm" onclick="decide(${r.id},'Denied')">Deny</button>` : ""}</tr>`).join("")}</table>`}</div>`,
@@ -292,7 +307,7 @@ const pages = {
   people: () => `<h2>People & Access</h2><div class="grid g2"><div class="card tw"><table><tr><th>NAME<th>EMAIL<th>USERNAME<th>ROLE<th>OFFICE / DIVISION<th>ACTIONS</tr>${U.map((u) => `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${u.e}<td>${u.un || "—"}<td>${RN[u.r]}<td>${u.d}<td>${userBtns(u)}</tr>`).join("")}</table></div><div class=card><b class="card-title">Create user</b><p class=note>All fields are required.</p>${field("un", "Full name", "", "e.g. Juan Dela Cruz")}${field("ue", "Email", "", "name@prc.gov.ph")}${field("uc", "Contact number", "", "09XXXXXXXXX or +639XXXXXXXXX")}${field("uu", "Username", "", "3-20 letters, numbers, . or _")}${field("up", "Password", "password", "8+ characters with a letter and a number")}<label>Role</label><select id=ur style="width:100%" onchange="toggleOffice()"><option value=admin>Admin<option value=guest>Guest User<option value=sa>Super Admin</select><div id=uo><label>Office / Division</label><select id=ud style="width:100%">${OFFICES.map((o) => `<option>${o}`).join("")}</select></div><br><br><button class=btn onclick=addU()>Create user</button></div></div>`,
   settings: () => `<h2>Customize UI</h2><div class=gcust>${appearanceCard()}${categoryManager()}</div>`
 };
- 
+
 // ---------- User creation ----------
 // Guest users don't belong to an office/division, so hide that field for them
 function toggleOffice() {
@@ -304,7 +319,7 @@ async function addU() {
   const phone = $("#uc").value.replace(/[\s-]/g, "");
   const username = $("#uu").value.trim().toLowerCase();
   const password = $("#up").value;
- 
+
   let ok = checkFields([
     ["un", "name", name],
     ["ue", "email", email],
@@ -315,7 +330,7 @@ async function addU() {
   if (username && U.some((x) => x.un === username)) { setErr("uu", "That username is already taken."); ok = false; }
   if (email && U.some((x) => x.e.toLowerCase() === email.toLowerCase())) { setErr("ue", "This email is already used by another user."); ok = false; }
   if (!ok) return toast("Please fix the highlighted fields");
- 
+
   const role = $("#ur").value;
   const salt = crypto.randomUUID();
   U.push({
@@ -326,10 +341,10 @@ async function addU() {
   toast("User created: " + name + " (they can now sign in)");
   render();
 }
- 
+
 // ---------- Edit / delete people (Super Admin) ----------
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
- 
+
 // Buttons shown at the end of each row (the creator and your own account can't be deleted)
 function userBtns(u) {
   const canDelete = !u.owner && u.id !== SESSION.id;
@@ -338,7 +353,7 @@ function userBtns(u) {
     ${canDelete ? `<button title="Delete" onclick="confirmDelUser(${u.id})">${icon("trash")}</button>` : ""}
   </div>`;
 }
- 
+
 function editUser(id) {
   const u = user(id);
   const lockRole = u.owner || u.id === SESSION.id;   // can't change your own role
@@ -361,11 +376,11 @@ function editUser(id) {
       <button class=btn onclick="saveUser(${u.id})">Save changes</button>
     </div>`);
 }
- 
+
 function toggleEditOffice() {
   $("#eoff").style.display = $("#er").value === "guest" ? "none" : "";
 }
- 
+
 async function saveUser(id) {
   const u = U.find((x) => x.id === id);
   const name = $("#en").value.replace(/\s+/g, " ").trim();
@@ -373,18 +388,18 @@ async function saveUser(id) {
   const phone = $("#ec").value.replace(/[\s-]/g, "");
   const username = $("#eu").value.trim().toLowerCase();
   const password = $("#ep").value;
- 
+
   const list = [["en", "name", name], ["ee", "email", email], ["ec", "phone", phone]];
   if (username || u.un) list.push(["eu", "username", username]);
   let ok = checkFields(list);
- 
+
   if (username && U.some((x) => x.id !== id && x.un === username)) { setErr("eu", "That username is already taken."); ok = false; }
   if (email && U.some((x) => x.id !== id && x.e.toLowerCase() === email.toLowerCase())) { setErr("ee", "This email is already used by another user."); ok = false; }
   if (password && !RULES.password.test(password)) { setErr("ep", RULES.password.msg); ok = false; }
   else if (!password && username && !u.h) { setErr("ep", "Set a password for this new login."); ok = false; }
   else setErr("ep", "");
   if (!ok) return toast("Please fix the highlighted fields");
- 
+
   u.n = name;
   u.e = email;
   u.p = phone;
@@ -395,12 +410,12 @@ async function saveUser(id) {
   }
   if (!u.owner && u.id !== SESSION.id) u.r = $("#er").value;
   u.d = u.r === "guest" ? "—" : $("#eo").value;
- 
+
   closeM();
   toast("Saved changes for " + u.n);
   render();
 }
- 
+
 function confirmDelUser(id) {
   const u = user(id);
   modal(`<h3>Delete user</h3>
@@ -410,7 +425,7 @@ function confirmDelUser(id) {
       <button class="btn r" onclick="delUser(${u.id})">Delete</button>
     </div>`);
 }
- 
+
 function delUser(id) {
   const u = user(id);
   U = U.filter((x) => x.id !== id);
@@ -419,11 +434,11 @@ function delUser(id) {
   toast("Deleted " + u.n);
   render();
 }
- 
+
 // ---------- Customize UI: appearance + categories (Super Admin) ----------
 const DEFAULT_SETTINGS = { name: "Document Management System", accent: "#5b5bd6", sidebar: "#0f1428", theme: "auto" };
 let SETTINGS = { ...DEFAULT_SETTINGS };
- 
+
 // Push the saved look (colors, theme) onto the page
 function applySettings() {
   const root = document.documentElement;
@@ -432,7 +447,7 @@ function applySettings() {
   if (SETTINGS.theme === "auto") root.removeAttribute("data-theme");
   else root.dataset.theme = SETTINGS.theme;
 }
- 
+
 function setSetting(key, value) {
   SETTINGS[key] = value;
   applySettings();
@@ -441,14 +456,14 @@ function setSetting(key, value) {
   clearTimeout(window.saveTimer);
   window.saveTimer = setTimeout(saveState, 300);
 }
- 
+
 function resetSettings() {
   SETTINGS = { ...DEFAULT_SETTINGS };
   applySettings();
   toast("Appearance reset to default");
   render();
 }
- 
+
 function appearanceCard() {
   const themes = [["auto", "Match device"], ["light", "Light"], ["dark", "Dark"]];
   return `<div class=card>
@@ -466,10 +481,10 @@ function appearanceCard() {
     <div style="margin-top:14px"><button class="btn g sm" onclick="resetSettings()">Reset to default</button></div>
   </div>`;
 }
- 
+
 // How many documents use a category (or one of its sub-categories)
 const countDocs = (c, sc) => D.filter((d) => d.c === c && (sc === undefined || d.s === sc)).length;
- 
+
 function categoryManager() {
   const keys = Object.keys(CAT);
   return `<div class=card>
@@ -500,7 +515,7 @@ function categoryManager() {
     </div>
   </div>`;
 }
- 
+
 function addCategory() {
   const n = $("#newcat").value.trim();
   if (!n) return toast("Enter a category name");
@@ -509,7 +524,7 @@ function addCategory() {
   toast("Category added: " + n);
   render();
 }
- 
+
 function addSub(i) {
   const c = Object.keys(CAT)[i];
   const n = $("#sub" + i).value.trim();
@@ -520,7 +535,7 @@ function addSub(i) {
   toast("Added " + n + " to " + c);
   render();
 }
- 
+
 // j is undefined for a category, or the sub-category index
 function renameModal(i, j) {
   const c = Object.keys(CAT)[i];
@@ -532,12 +547,12 @@ function renameModal(i, j) {
       <button class=btn onclick="doRename(${i}, ${j === undefined ? "null" : j})">Save</button>
     </div>`);
 }
- 
+
 function doRename(i, j) {
   const c = Object.keys(CAT)[i];
   const n = $("#rn").value.trim();
   if (!n) return toast("Enter a name");
- 
+
   if (j === null) {
     if (n !== c && n in CAT) return toast("That category already exists");
     // rebuild the object so the order in the sidebar stays the same
@@ -558,7 +573,7 @@ function doRename(i, j) {
   toast("Renamed to " + n);
   render();
 }
- 
+
 // Categories that still have documents can't be deleted
 function delCat(i, j) {
   const c = Object.keys(CAT)[i];
@@ -573,7 +588,7 @@ function delCat(i, j) {
       <button class="btn r" onclick="doDelCat(${i}, ${isSub ? j : "null"})">Delete</button>
     </div>`);
 }
- 
+
 function doDelCat(i, j) {
   const c = Object.keys(CAT)[i];
   if (j === null) {
@@ -588,7 +603,7 @@ function doDelCat(i, j) {
   toast("Deleted");
   render();
 }
- 
+
 // ---------- Form rules (create / edit user) ----------
 const RULES = {
   name: {
@@ -612,20 +627,20 @@ const RULES = {
     msg: "At least 8 characters with at least one letter and one number."
   }
 };
- 
+
 // One labelled input with an error line underneath
 function field(id, label, type, placeholder, value = "", required = true) {
   return `<label>${label}${required ? ' <span class=req>*</span>' : ""}</label>
     <input id=${id} ${type ? "type=" + type : ""} ${type === "password" ? "autocomplete=new-password" : ""} placeholder="${esc(placeholder)}" value="${esc(value)}" oninput="setErr('${id}', '')">
     <div class=ferr id=${id}_e></div>`;
 }
- 
+
 function setErr(id, msg) {
   const box = $("#" + id + "_e"), input = $("#" + id);
   if (box) box.textContent = msg;
   if (input) input.classList.toggle("bad", !!msg);
 }
- 
+
 // list = [[inputId, ruleName, value], ...]. Shows a message under every wrong field.
 function checkFields(list) {
   let allGood = true;
@@ -639,19 +654,19 @@ function checkFields(list) {
   }
   return allGood;
 }
- 
+
 // "Oct 2, 2026, 4:10 PM"
 function when(value) {
   const d = new Date(value);
   return isNaN(d) ? String(value) : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
- 
+
 // ---------- Uploaded files (kept in the browser's IndexedDB) ----------
 const FILE_TYPES = { pdf: "pdf", doc: "docx", docx: "docx", xls: "xlsx", xlsx: "xlsx", ppt: "pptx", pptx: "pptx" };
 const MAX_FILE = 25 * 1024 * 1024;   // 25 MB
- 
+
 const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
- 
+
 function fileDB() {
   return new Promise((ok, fail) => {
     const req = indexedDB.open("prcdms_files", 1);
@@ -686,7 +701,7 @@ async function fileDelete(id) {
     tx.onerror = () => fail(tx.error);
   });
 }
- 
+
 // Preview popup: PDFs are shown inside the page, other files can be downloaded
 async function showPreview(d) {
   const ext = (d.fn || "").split(".").pop().toLowerCase();
@@ -700,13 +715,14 @@ async function showPreview(d) {
     body = `<div class=prev><span>${icon("file", 28)}<br>${note}</span></div>`;
   }
   const askFirst = R == "guest" && !approved(d.id, "download");
-  modal(`<h3>${esc(d.t)}</h3>${body}
+  modal(`<h3>${esc(d.t)} <span class="tag Internal">${rev2(d.rev)}</span></h3>${body}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn g" onclick=closeM()>Close</button>
+      <button class="btn g" onclick="showHistory(${d.id})">${icon("history", 14)} Version history</button>
       <button class=btn onclick="closeM();act(${d.id}, 'download')">${askFirst ? icon("lock", 14) + " Request download" : "Download"}</button>
     </div>`, !!(blob && ext === "pdf"));
 }
- 
+
 // Print: PDFs print straight from the stored file
 async function printFile(d) {
   const blob = await fileGet(d.id);
@@ -720,7 +736,215 @@ async function printFile(d) {
   setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 60000);
   toast("Sending to printer…");
 }
- 
+
+// ---------- Document control: revisions (ISO-style Ver. 00, 01, 02 ...) ----------
+const rev2 = (n) => "Ver. " + String(n || 0).padStart(2, "0");
+
+// Document code, e.g. PRC-ISO-003 / PRC-CI-005
+function docCode(d) {
+  const words = d.c.split(/\s+/);
+  const abbr = words.length > 1 ? words.map((w) => w[0]).join("") : d.c.length <= 4 ? d.c : d.c.slice(0, 3);
+  return "PRC-" + abbr.toUpperCase() + "-" + String(d.id).padStart(3, "0");
+}
+
+// Every document keeps its revisions, oldest first. The last one is the current revision.
+function history(d) {
+  if (!d.history) d.history = [{ rev: d.rev || 0, dt: d.dt, by: d.o, fn: d.fn || "", sz: d.sz, note: "Initial release", key: null }];
+  return d.history;
+}
+
+// An existing document with the same title or the same file name?
+function findSameName(title, fileName) {
+  const clean = (t) => t.toLowerCase().replace(/\.[^.]+$/, "").replace(/[\s_-]+/g, " ").trim();
+  const t = title.toLowerCase().replace(/[\s_-]+/g, " ").trim(), f = clean(fileName);
+  return D.filter((x) => !x.del && (x.t.toLowerCase().replace(/[\s_-]+/g, " ").trim() === t || (x.fn && clean(x.fn) === f)))
+    .sort((a, b) => b.dt.localeCompare(a.dt))[0];
+}
+
+function sameNameModal(d) {
+  const next = rev2((d.rev || 0) + 1);
+  modal(`<h3>This document already exists</h3>
+    <p><b>${esc(d.t)}</b> is already filed in <b>${esc(d.c)}${d.s ? " › " + esc(d.s) : ""}</b> as ${rev2(d.rev)}.</p>
+    <p>Upload your file as <b>${next}</b> of the same document? The earlier version stays in its version history.</p>
+    <label>What changed in this version <span class=req>*</span></label>
+    <input id=rvn placeholder="e.g. Updated section 4.2 per audit findings" oninput="setErr('rvn', '')">
+    <div class=ferr id=rvn_e></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class="btn g" onclick="commitNew()">Keep as a separate document</button>
+      <button class=btn onclick="commitRevision(${d.id})">Upload as ${next}</button>
+    </div>`);
+}
+
+async function commitRevision(id) {
+  const note = $("#rvn").value.trim();
+  if (!note) return setErr("rvn", "Describe what changed in this version.");
+  const d = doc(id);
+  try {
+    await applyRevision(d, pending.file, note);
+  } catch (e) {
+    return setErr("rvn", "Could not save this file in the browser. Try a smaller file.");
+  }
+  d.kw = [...new Set([...(d.kw || []), ...pending.kw])];
+  pending = null;
+  closeM();
+  toast(d.t + " is now " + rev2(d.rev));
+  render();
+}
+
+// Keeps the current file as the previous revision, then stores the new file as the current one
+async function applyRevision(d, file, note) {
+  const list = history(d), current = d.rev || 0;
+  if (d.hasFile) {
+    const old = await fileGet(d.id);
+    if (old) {
+      const key = d.id + "@" + current;
+      await fileSave(key, old);
+      list[list.length - 1].key = key;
+    }
+  }
+  await fileSave(d.id, file);
+  d.rev = current + 1;
+  d.ty = FILE_TYPES[file.name.split(".").pop().toLowerCase()];
+  d.sz = fmtSize(file.size);
+  d.fn = file.name;
+  d.hasFile = true;
+  d.dt = new Date().toISOString().slice(0, 10);
+  list.push({ rev: d.rev, dt: new Date().toISOString(), by: ACTOR[R], fn: file.name, sz: d.sz, note, key: null });
+  addLog("updated to " + rev2(d.rev), d);
+}
+
+function showHistory(id) {
+  const d = doc(id), list = history(d);
+  modal(`<h3>${esc(d.t)}: version history</h3>
+    <p class=note>Document code <b>${docCode(d)}</b> · current ${rev2(d.rev)}</p>
+    <div class=tw><table><tr><th>VER.<th>DATE & TIME<th>UPDATED BY<th>FILE<th>WHAT CHANGED<th></tr>
+    ${list.map((e, i) => i).reverse().map((i) => {
+      const e = list[i], current = i == list.length - 1;
+      return `<tr><td class=nw><b>${rev2(e.rev)}</b>${current ? ' <span class="tag Public">Current</span>' : ""}
+        <td class=nw>${when(e.dt)}<td class=nw>${esc(user(e.by).n)}
+        <td>${e.fn ? esc(e.fn) : "(sample document)"}<td class=reason>${esc(e.note)}
+        <td class=nw><button class="btn g sm" title="Download this version" onclick="dlRev(${id}, ${i})">${icon("download", 14)}</button></tr>`;
+    }).join("")}</table></div>
+    <div style="text-align:right;margin-top:14px"><button class=btn onclick=closeM()>Close</button></div>`, true);
+}
+
+// Download one revision (inside its category folder). Guests still need approval.
+async function dlRev(id, i) {
+  if (R == "guest" && !approved(id, "download")) return reqModal(id, "download");
+  const d = doc(id), list = history(d), e = list[i];
+  const blob = e.key ? await fileGet(e.key) : i == list.length - 1 && d.hasFile ? await fileGet(d.id) : null;
+  if (!blob) return toast("This version has no stored file (sample document).");
+  if (!window.JSZip) return toast("ZIP library not loaded");
+  const z = new JSZip(), dot = e.fn.lastIndexOf(".");
+  z.folder([d.c, d.s].filter(Boolean).join("/")).file(e.fn.slice(0, dot) + " (" + rev2(e.rev) + ")" + e.fn.slice(dot), blob);
+  const out = await z.generateAsync({ type: "blob" }), a = document.createElement("a");
+  a.href = URL.createObjectURL(out);
+  a.download = (d.t + "_" + rev2(e.rev)).replace(/[^\w.-]+/g, "_") + ".zip";
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
+  addLog("downloaded " + rev2(e.rev) + " of", d);
+  toast("Downloading " + rev2(e.rev));
+}
+
+// ---------- Keyword search ----------
+const STOP = new Set(["the", "and", "for", "with", "from", "this", "that"]);
+const words = (t) => t.toLowerCase().match(/[a-z0-9]+/g) || [];
+const parseKw = (t) => [...new Set(t.split(/[,;\n]/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+
+// All keywords of a document: the ones typed in + the words of its title
+function kwOf(d) {
+  return [...new Set([...(d.kw || []), ...words(d.t).filter((w) => w.length > 2 && !STOP.has(w))])];
+}
+
+// Files that match every word typed, best matches first
+function searchDocs(text) {
+  const tokens = words(text);
+  if (!tokens.length) return [];
+  return D.filter((d) => !d.del).map((d) => {
+    const kws = kwOf(d), where = (d.c + " " + d.s).toLowerCase();
+    const hay = [d.t, d.c, d.s, d.fn || "", kws.join(" "), docCode(d)].join(" ").toLowerCase();
+    if (!tokens.every((t) => hay.includes(t))) return null;
+    let score = 0;
+    tokens.forEach((t) => {
+      if (kws.includes(t)) score += 5; else if (kws.some((k) => k.includes(t))) score += 3;
+      if (d.t.toLowerCase().includes(t)) score += 4;
+      if (where.includes(t)) score += 2;
+    });
+    return { d, score, hits: kws.filter((k) => tokens.some((t) => k.includes(t))) };
+  }).filter(Boolean).sort((a, b) => b.score - a.score || b.d.dt.localeCompare(a.d.dt));
+}
+
+function setQ(text) {
+  if (!text.trim()) {
+    q = "";
+    return leaveSearch();
+  }
+  if (P != "search") beforeSearch = { P, cat, sub };
+  q = text;
+  P = "search";
+  render();
+}
+
+// Typing in the top search box shows the matching files.
+// Clearing the box takes you back to the page you were on before.
+let beforeSearch = null;
+
+function leaveSearch() {
+  const back = beforeSearch || { P: "overview", cat: "All", sub: "" };
+  P = back.P;
+  cat = back.cat;
+  sub = back.sub;
+  beforeSearch = null;
+  render();
+}
+
+function onSearch(value) {
+  q = value;
+  clearTimeout(window.tm);
+  window.tm = setTimeout(() => {
+    if (q.trim()) {
+      if (P != "search") beforeSearch = { P, cat, sub };
+      P = "search";
+      render();
+    } else if (P == "search") {
+      leaveSearch();
+    } else {
+      render();
+    }
+    const box = $(".s");
+    box.focus();
+    box.setSelectionRange(99, 99);
+  }, 250);
+}
+
+function searchPage() {
+  const kwChip = (k, hit) => `<button class="kw${hit ? " match" : ""}" data-k="${esc(k)}" onclick="setQ(this.dataset.k)">${esc(k)}</button>`;
+  if (!q.trim()) {
+    const count = {};
+    D.filter((d) => !d.del).forEach((d) => kwOf(d).forEach((k) => (count[k] = (count[k] || 0) + 1)));
+    const all = Object.entries(count).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 60);
+    return `<h2>Keyword search</h2><div class=card>
+      <p>Type a keyword in the search box above, or pick one below to see the files connected to it.</p>
+      <div class=chips>${all.map(([k, n]) => `<button class=kw data-k="${esc(k)}" onclick="setQ(this.dataset.k)">${esc(k)} <small>${n}</small></button>`).join("")}</div></div>`;
+  }
+  const found = searchDocs(q);
+  return `<h2>Keyword search</h2><div class=card>
+    <p class=note style="font-size:13px">${found.length} file(s) found for <b>“${esc(q)}”</b></p>
+    ${found.length ? found.map(({ d, hits }) => `<div class=hitrow>
+      <div class=ic style="background:${T[d.ty][1]}">${T[d.ty][0][0]}</div>
+      <div class=hitbody>
+        <a href="#" class=doclink onclick="act(${d.id}, 'view'); return false">${esc(d.t)}</a>
+        <span class="tag Internal rev" title="Version history" onclick="showHistory(${d.id})">${rev2(d.rev)}</span>
+        <small>${T[d.ty][0]} · ${d.sz} · ${esc(d.c)}${d.s ? " › " + esc(d.s) : ""} · ${docCode(d)}</small>
+        <div class=chips>${kwOf(d).slice(0, 10).map((k) => kwChip(k, hits.includes(k))).join("")}</div>
+      </div></div>`).join("") : "<div class=empty>No files match this keyword. Try a shorter word, or pick a keyword from the list.</div>"}
+    ${found.length ? "" : `<div style="text-align:center"><button class="btn g sm" onclick="setQ('')">Browse all keywords</button></div>`}
+  </div>`;
+}
+
 // ---------- Sidebar, header and main render ----------
 function nav() {
   const sa = R == "sa", ad = R != "guest", b = (p, i, l, c) => `<button class="${P == p && cat == "All" || P == p && p != "documents" ? "on" : ""}" onclick="go('${p}')">${i} ${l}${c != null ? `<b>${c}</b>` : ""}</button>`;
@@ -728,6 +952,8 @@ function nav() {
 }
 function go(p, k) {
   P = p;
+  beforeSearch = null;
+  if (p != "search") q = "";   // leaving the search page clears the search
   if (!k && p == "documents") {
     cat = "All";
     sub = "";
@@ -743,10 +969,10 @@ function render() {
   const u = user(ACTOR[R]);
   if (R == "guest" && ["analytics", "activity", "people", "settings", "trash"].includes(P) || R == "admin" && ["activity", "people", "settings"].includes(P)) P = "overview";
   $("#sb").innerHTML = nav();
-  $("#hd").innerHTML = `<button class="btn g burger" onclick="$('#sb').classList.toggle('open')">${icon("menu", 18)}</button><input class=s placeholder="Search documents, people, or activity…" value="${q}" oninput="q=this.value;clearTimeout(window.tm);window.tm=setTimeout(()=>{if(!['overview','documents'].includes(P))P='documents';render();const i=$('.s');i.focus();i.setSelectionRange(99,99)},250)"><span class="tag Internal">${RN[R]}</span>${R != "guest" ? `<button class=btn onclick="upl()">${icon("plus", 14)} New document</button>` : ""}<span class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</span><button class="btn g sm" onclick=logout()>Log out</button>`;
+  $("#hd").innerHTML = `<button class="btn g burger" onclick="$('#sb').classList.toggle('open')">${icon("menu", 18)}</button><input class=s placeholder="Search by keyword or file name…" value="${q}" oninput="onSearch(this.value)"><span class="tag Internal">${RN[R]}</span>${R != "guest" ? `<button class=btn onclick="upl()">${icon("plus", 14)} New document</button>` : ""}<span class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</span><button class="btn g sm" onclick=logout()>Log out</button>`;
   $("#pg").innerHTML = pages[P]();
 }
- 
+
 // ---------- Editing a document ----------
 function editDoc(id) {
   const d = doc(id);
@@ -755,6 +981,8 @@ function editDoc(id) {
     <label>Title <span class=req>*</span></label>
     <input id=edt value="${esc(d.t)}" oninput="setErr('edt', '')">
     <div class=ferr id=edt_e></div>
+    <label>Keywords (optional, separated by commas)</label>
+    <input id=edk value="${esc((d.kw || []).join(", "))}">
     <label>Category</label>
     <select id=edc style="width:100%" onchange="editSubOpts()">${cats.map((c) => `<option ${c === d.c ? "selected" : ""}>${esc(c)}`).join("")}</select>
     <div id=edsw><label>Sub-category</label><select id=eds style="width:100%"></select></div>
@@ -763,57 +991,59 @@ function editDoc(id) {
     <label>Replace file (optional)</label>
     <input id=edf type=file accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
     <div class=ferr id=edf_e></div>
-    <p class=note style="margin:4px 0 0">Current file: ${d.fn ? esc(d.fn) : "none (sample document)"}. Leave empty to keep it.</p>
+    <p class=note style="margin:4px 0 0">Current file: ${d.fn ? esc(d.fn) : "none (sample document)"} (${rev2(d.rev)}). Leave empty to keep it.</p>
+    <label>What changed in this version <span class=note style="display:inline">(required when you replace the file)</span></label>
+    <input id=edn placeholder="e.g. Updated section 4.2 per audit findings" oninput="setErr('edn', '')">
+    <div class=ferr id=edn_e></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="btn g" onclick=closeM()>Cancel</button>
       <button class=btn id=edbtn onclick="saveDoc(${d.id})">Save changes</button>
     </div>`);
   editSubOpts(d.s);
 }
- 
+
 function editSubOpts(keep) {
   const l = CAT[$("#edc").value] || [];
   $("#edsw").style.display = l.length ? "" : "none";
   $("#eds").innerHTML = l.map((x) => `<option ${x === keep ? "selected" : ""}>${esc(x)}`).join("");
 }
- 
+
 async function saveDoc(id) {
   const d = doc(id);
   const title = $("#edt").value.trim();
   const file = $("#edf").files[0];
   const ext = file ? file.name.split(".").pop().toLowerCase() : "";
- 
+
   setErr("edt", "");
   setErr("edf", "");
   if (!title) return setErr("edt", "Enter a title.");
   if (file && !FILE_TYPES[ext]) return setErr("edf", "Allowed files: PDF, Word, Excel or PowerPoint.");
   if (file && file.size > MAX_FILE) return setErr("edf", "This file is too large (25 MB maximum).");
- 
+
+  const note = $("#edn").value.trim();
+  if (file && !note) return setErr("edn", "Describe what changed in this version.");
   if (file) {
     $("#edbtn").disabled = true;
     try {
-      await fileSave(d.id, file);
+      await applyRevision(d, file, note);   // keeps the old file as the previous revision
     } catch (e) {
       $("#edbtn").disabled = false;
       return setErr("edf", "Could not save this file in the browser. Try a smaller file.");
     }
-    d.ty = FILE_TYPES[ext];
-    d.sz = fmtSize(file.size);
-    d.fn = file.name;
-    d.hasFile = true;
   }
- 
+  d.kw = parseKw($("#edk").value);
+
   d.t = title;
   d.c = $("#edc").value;
   d.s = CAT[d.c].length ? $("#eds").value : "";
   d.ac = $("#eda").value;
   d.dt = new Date().toISOString().slice(0, 10);   // "date posted" shows the last update
-  addLog("updated", d);
+  if (!file) addLog("updated", d);
   closeM();
-  toast("Updated " + d.t);
+  toast(file ? "Saved " + rev2(d.rev) + " of " + d.t : "Updated " + d.t);
   render();
 }
- 
+
 // ---------- Posting a new document ----------
 function upl() {
   if (!Object.keys(CAT).length) return toast("Add a category first (Customize UI)");
@@ -825,6 +1055,9 @@ function upl() {
     <label>Title <span class=req>*</span></label>
     <input id=nt oninput="setErr('nt', '')">
     <div class=ferr id=nt_e></div>
+    <label>Keywords (optional)</label>
+    <input id=nk placeholder="e.g. audit, quality, 2026">
+    <p class=note style="margin:4px 0 0">Separate with commas. Words from the title are added automatically.</p>
     <label>Category</label>
     <select id=nc style="width:100%" onchange="subOpts()">${Object.keys(CAT).map((c) => `<option>${c}`).join("")}</select>
     <div id=nsw><label>Sub-category</label><select id=ns style="width:100%"></select></div>
@@ -836,7 +1069,7 @@ function upl() {
     </div>`);
   subOpts();
 }
- 
+
 // Choosing a file fills in the title (you can still change it)
 function pickFile() {
   const f = $("#nfile").files[0];
@@ -853,40 +1086,51 @@ function subOpts() {
   $("#nsw").style.display = l.length ? "" : "none";
   $("#ns").innerHTML = l.map((x) => `<option>${x}`).join("");
 }
+let pending = null;   // the upload waiting for "new version or separate document?"
+
 async function addD() {
   const file = $("#nfile").files[0];
   const title = $("#nt").value.trim();
   const ext = file ? file.name.split(".").pop().toLowerCase() : "";
- 
+
   setErr("nfile", "");
   setErr("nt", "");
   if (!file) return setErr("nfile", "Choose a file to upload.");
   if (!FILE_TYPES[ext]) return setErr("nfile", "Allowed files: PDF, Word, Excel or PowerPoint.");
   if (file.size > MAX_FILE) return setErr("nfile", "This file is too large (25 MB maximum).");
   if (!title) return setErr("nt", "Enter a title.");
- 
+
   const c = $("#nc").value;
+  pending = { file, ext, title, c, s: CAT[c].length ? $("#ns").value : "", ac: $("#na").value, kw: parseKw($("#nk").value) };
+
+  const same = findSameName(title, file.name);
+  if (same) return sameNameModal(same);   // ISO-style: ask about a new version
+  await commitNew();
+}
+
+async function commitNew() {
+  const p = pending;
   const d = {
-    id: nid++, t: title, c, s: CAT[c].length ? $("#ns").value : "",
-    ty: FILE_TYPES[ext], sz: fmtSize(file.size), fn: file.name, hasFile: true,
-    o: ACTOR[R], dt: new Date().toISOString().slice(0, 10), v: 0, dl: 0, ac: $("#na").value, del: 0
+    id: nid++, t: p.title, c: p.c, s: p.s, ty: FILE_TYPES[p.ext], sz: fmtSize(p.file.size), fn: p.file.name, hasFile: true,
+    kw: p.kw, rev: 0, o: ACTOR[R], dt: new Date().toISOString().slice(0, 10), v: 0, dl: 0, ac: p.ac, del: 0
   };
- 
-  $("#upbtn").disabled = true;
+  const btn = $("#upbtn");
+  if (btn) btn.disabled = true;
   try {
-    await fileSave(d.id, file);   // the file itself is kept in the browser (IndexedDB)
+    await fileSave(d.id, p.file);   // the file itself is kept in the browser (IndexedDB)
   } catch (e) {
-    $("#upbtn").disabled = false;
-    return setErr("nfile", "Could not save this file in the browser. Try a smaller file.");
+    if (btn) btn.disabled = false;
+    return toast("Could not save this file in the browser. Try a smaller file.");
   }
- 
+  history(d);   // creates "Rev. 00 - Initial release"
   D.unshift(d);
   addLog("posted", d);
+  pending = null;
   closeM();
-  toast("Document posted in " + c + (d.s ? " › " + d.s : ""));
+  toast("Document posted in " + d.c + (d.s ? " › " + d.s : ""));
   render();
 }
- 
+
 // ---------- Start ----------
 loadState();
 applySettings();
@@ -904,4 +1148,3 @@ window.addEventListener("storage", (e) => {
   }
 });
 render();
- 

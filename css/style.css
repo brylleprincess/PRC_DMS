@@ -444,7 +444,7 @@ td {
 .kv span {
   color: var(--mu);
 }
-.prev {
+.pver {
   height: 180px;
   border: 1px dashed var(--bd);
   border-radius: 10px;
@@ -560,7 +560,7 @@ td {
   align-items: center;
   gap: 3px;
 }
-.prev span {
+.pver span {
   text-align: center;
 }
  
@@ -666,4 +666,46 @@ input[type=file] { padding: 8px 12px; }
   border-radius: 10px;
   margin: 10px 0;
 }
+ 
+/* Revisions and keyword search */
+.ver {
+  cursor: pointer;
+  margin-left: 6px;
+  font-size: 10px;
+}
+.hitrow {
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--bd);
+}
+.hitrow small {
+  display: block;
+  color: var(--mu);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.doclink {
+  color: var(--ac);
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+}
+.doclink:hover { text-decoration: underline; }
+.kw {
+  border: 1px solid var(--bd);
+  background: none;
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--mu);
+}
+.kw:hover { border-color: var(--ac); color: var(--ac); }
+.kw.match {
+  background: var(--in);
+  color: var(--int);
+  border-color: transparent;
+}
+.kw small { opacity: .7; }
  
