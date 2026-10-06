@@ -15,7 +15,7 @@ let U = SEED_USERS;
 let D = [
   [1, "00. Training Database 1st SEM 2023", "Reports", "xlsx", "4.8 MB", 3, "2023-07-17", 51, 12, "Internal", "Physical Annex A"],
   [2, "1 - Cover Page", "ISO", "pdf", "1.1 MB", 2, "2022-12-19", 204, 31, "Public", "Policy Manual"],
-  [3, "QPM-BAG-ix Manual Version", "ISO", "docx", "2.4 MB", 2, "2019-01-04", 129, 18, "Internal", "Policy Manual"],
+  [3, "QPM-BAG-ix Manual Revision", "ISO", "docx", "2.4 MB", 2, "2019-01-04", 129, 18, "Internal", "Policy Manual"],
   [4, "Regional Issuance No. 2024-07", "Regional Issuances", "pdf", "3.2 MB", 3, "2024-11-12", 318, 74, "Public", "Office Order"],
   [5, "Commission Resolution No. 1241", "Commission Issuances", "pdf", "2.0 MB", 1, "2024-12-10", 647, 138, "Restricted", "Resolutions"],
   [6, "PRB Guidelines v3", "PRB Issuances", "docx", "2.4 MB", 2, "2024-12-12", 892, 205, "Public", ""],
@@ -58,7 +58,7 @@ const LOGO = "assets/prc-logo.png";
 // ---------- Shared storage ----------
 // Keeps documents, requests and activity in sync between the three role pages
 function saveState() {
-  LS.set(STORE_KEY, { D, req, log, nid, users: U, CAT, SETTINGS });
+  LS.set(STORE_KEY, { D, req, log, nid, users: U, CAT, SETTINGS, shares });
 }
 function loadState() {
   const s = LS.get(STORE_KEY);
@@ -67,6 +67,7 @@ function loadState() {
   if (s.req) req = s.req;
   if (s.log) log = s.log;
   if (s.nid) nid = s.nid;
+  if (s.shares) shares = s.shares;
   if (s.users) U = typeof withBuiltIn === "function" ? withBuiltIn(s.users) : s.users;
   if (s.SETTINGS) SETTINGS = { ...DEFAULT_SETTINGS, ...s.SETTINGS };
   if (s.CAT) {
@@ -227,10 +228,135 @@ function btns(d) {
 }
 function rows(list) {
   if (!list.length) return "<div class=empty>No documents found.</div>";
-  return `<div class=tw><table><tr><th>DOCUMENT<th>OWNER<th>DATE POSTED<th>VIEWS<th>DOWNLOADS<th>ACCESS<th>ACTIONS</tr>${list.map((d) => {
+  return `<div class=tw>${selBar()}<table><tr><th class=cb><input type=checkbox title="Select all" ${list.every((d) => sel.has(d.id)) ? "checked" : ""} onclick="toggleAll(${JSON.stringify(list.map((d) => d.id))})"><th>DOCUMENT<th>OWNER<th>DATE POSTED<th>VIEWS<th>DOWNLOADS<th>ACCESS<th>ACTIONS</tr>${list.map((d) => {
     const u = user(d.o), t = T[d.ty];
-    return `<tr><td><div class=fi><div class=ic style="background:${t[1]}">${t[0][0]}</div><div>${esc(d.t)} <span class="tag Internal rev" title="Version history" onclick="showHistory(${d.id})">${rev2(d.rev)}</span><small>${t[0]} · ${d.sz} · ${d.c}${d.s ? " › " + d.s : ""}</small></div></div><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${d.dt}<td>${d.v}<td>${d.dl}<td><span class="tag ${d.ac}">${d.ac}</span><td>${btns(d)}</tr>`;
+    return `<tr><td class=cb><input type=checkbox ${sel.has(d.id) ? "checked" : ""} onclick="toggleSel(${d.id})"><td><div class=fi><div class=ic style="background:${t[1]}">${t[0][0]}</div><div>${esc(d.t)} <span class="tag Internal rev" title="Version history" onclick="showHistory(${d.id})">${rev2(d.rev)}</span><small>${t[0]} · ${d.sz} · ${d.c}${d.s ? " › " + d.s : ""}</small></div></div><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${d.dt}<td>${d.v}<td>${d.dl}<td><span class="tag ${d.ac}">${d.ac}</span><td>${btns(d)}</tr>`;
   }).join("")}</table></div>`;
+}
+
+// ---------- Select files: download / share / delete several at once ----------
+let sel = new Set();     // ids of the ticked documents
+let shares = [];         // who shared which file with whom
+
+const selDocs = () => D.filter((d) => sel.has(d.id) && !d.del);
+function toggleSel(id) { sel.has(id) ? sel.delete(id) : sel.add(id); render(); }
+function toggleAll(ids) {
+  const all = ids.every((i) => sel.has(i));
+  ids.forEach((i) => (all ? sel.delete(i) : sel.add(i)));
+  render();
+}
+function clearSel() { sel.clear(); render(); }
+
+// The bar that appears above the table when something is ticked
+function selBar() {
+  const list = selDocs();
+  if (!list.length) return "";
+  const lock = (a) => (R == "guest" && list.some((d) => !approved(d.id, a)) ? " " + icon("lock", 10) : "");
+  return `<div class=selbar><b>${list.length} selected</b>
+    <button class="btn sm" onclick="bulkDownload()">${icon("download", 14)} Download${lock("download")}</button>
+    <button class="btn sm" onclick="bulkShare()">${icon("share", 14)} Share${lock("share")}</button>
+    <button class="btn r sm" onclick="bulkDelete()">${icon("trash", 14)} Delete${lock("delete")}</button>
+    <button class="btn g sm" onclick="clearSel()">Clear</button></div>`;
+}
+
+// Guests need an approved request for every file before they can do an action
+function guestBlocked(list, action) {
+  if (R != "guest") return false;
+  const first = list.find((d) => !approved(d.id, action));
+  if (!first) return false;
+  const n = list.filter((d) => !approved(d.id, action)).length;
+  toast(n + " selected file(s) need approval to " + action + ". Send a request first.");
+  reqModal(first.id, action);
+  return true;
+}
+
+function bulkDownload() {
+  const list = selDocs();
+  if (guestBlocked(list, "download")) return;
+  list.forEach((d) => { d.dl++; addLog("downloaded", d); });
+  zipDl(list, "PRC-DMS-selected");   // real files, kept in their category folders
+  toast("Downloading " + list.length + " file(s) in category folders");
+  sel.clear();
+  render();
+}
+
+function bulkDelete() {
+  const list = selDocs();
+  if (guestBlocked(list, "delete")) return;
+  modal(`<h3>Delete ${list.length} file(s)?</h3>
+    <p>They will be moved to the Recycle Bin, where they can be restored.</p>
+    <ul class=sharelist>${list.map((d) => `<li>${esc(d.t)}</li>`).join("")}</ul>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class="btn r" onclick="doBulkDelete()">Move to Recycle Bin</button>
+    </div>`);
+}
+
+function doBulkDelete() {
+  const list = selDocs();
+  list.forEach((d) => {
+    d.del = 1;
+    d.delAt = new Date().toISOString();
+    d.delBy = ACTOR[R];
+    addLog("deleted", d);
+  });
+  sel.clear();
+  closeM();
+  toast(list.length + " file(s) moved to the Recycle Bin");
+  render();
+}
+
+// Share: copy a link, or send the files to someone in the system
+function bulkShare() {
+  const list = selDocs();
+  if (guestBlocked(list, "share")) return;
+  const base = location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "index.html");
+  const links = list.map((d) => d.t + ": " + base + "?doc=" + d.id).join("\n");
+  const people = U.filter((u) => u.id !== ACTOR[R]);
+  modal(`<h3>Share ${list.length} file(s)</h3>
+    <ul class=sharelist>${list.map((d) => `<li>${esc(d.t)} <span class="tag Internal">${rev2(d.rev)}</span></li>`).join("")}</ul>
+    <label>Link (people open it after signing in)</label>
+    <textarea id=shl readonly rows="${Math.min(list.length, 4)}">${esc(links)}</textarea>
+    <button class="btn g sm" style="margin-top:6px" onclick="copyShareLink()">Copy link</button>
+    <label>Share with</label>
+    <select id=shu style="width:100%"><option value="">Choose a person</option>${people.map((u) => `<option value=${u.id}>${esc(u.n)} (${RN[u.r]})`).join("")}</select>
+    <div class=ferr id=shu_e></div>
+    <label>Message (optional)</label>
+    <input id=shm placeholder="e.g. Please review before Friday">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Close</button>
+      <button class=btn onclick="doShare()">Share</button>
+    </div>`);
+}
+
+function copyShareLink() {
+  const box = $("#shl");
+  box.select();
+  try { document.execCommand("copy"); toast("Link copied"); } catch (e) { toast("Press Ctrl+C to copy the link"); }
+}
+
+function doShare() {
+  const to = +$("#shu").value;
+  if (!to) return setErr("shu", "Choose who to share with.");
+  const list = selDocs(), msg = $("#shm").value.trim();
+  list.forEach((d) => {
+    shares.unshift({ doc: d.id, from: ACTOR[R], to, msg, t: new Date().toISOString() });
+    addLog("shared with " + user(to).n, d);
+  });
+  sel.clear();
+  closeM();
+  toast("Shared " + list.length + " file(s) with " + user(to).n);
+  render();
+}
+
+// "Shared with you" card on the Overview page
+function sharedCard() {
+  const mine = shares.filter((x) => x.to === ACTOR[R] && doc(x.doc) && !doc(x.doc).del).slice(0, 6);
+  if (!mine.length) return "";
+  return `<div class=card style="margin-bottom:14px"><b class="card-title">Shared with you</b>
+    ${mine.map((x) => `<div class=hitrow style="padding:10px 0">
+      <div><a href="#" class=doclink onclick="act(${x.doc}, 'view'); return false">${esc(doc(x.doc).t)}</a>
+      <small>From ${esc(user(x.from).n)} · ${when(x.t)}${x.msg ? " · “" + esc(x.msg) + "”" : ""}</small></div></div>`).join("")}</div>`;
 }
 
 // ---------- Search, filters and zip download ----------
@@ -284,7 +410,7 @@ function pick(i, j) {
 
 // ---------- Pages ----------
 const pages = {
-  overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${dbar()}${R != "guest" ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
+  overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${sharedCard()}${dbar()}${R != "guest" ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
   search: () => searchPage(),
   documents: () => `<h2>${cat == "All" ? "All Documents" : cat + (sub ? " › " + sub : "")}</h2><div class=card>${filters()}${rows(filt())}</div>`,
   analytics: () => `<h2>Analytics</h2>${dbar()}${stats()}<div class="grid g2">${chart()}${topDocs()}</div>`,
@@ -953,6 +1079,7 @@ function nav() {
 }
 function go(p, k) {
   P = p;
+  sel.clear();
   beforeSearch = null;
   if (p != "search") q = "";   // leaving the search page clears the search
   if (!k && p == "documents") {
@@ -1149,3 +1276,7 @@ window.addEventListener("storage", (e) => {
   }
 });
 render();
+
+
+const sharedId = new URLSearchParams(location.search).get("doc");
+if (AUTH && sharedId && doc(+sharedId) && !doc(+sharedId).del) act(+sharedId, "view");

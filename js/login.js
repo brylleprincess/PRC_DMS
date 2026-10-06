@@ -44,7 +44,7 @@ async function doLogin() {
 
   if (acct && (await hash(password, acct.salt)) === acct.h) {
     LS.set(SESSION_KEY, { id: acct.id, role: acct.r });
-    location.href = ROLE_PAGE[acct.r];
+    location.href = ROLE_PAGE[acct.r] + location.search;
     return;
   }
 
@@ -60,7 +60,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && $("#go")) $("#go").click();
 });
 
-// Opening the login page always signs you out first,
-// so you can test logging in as different accounts
+// Opening the login page 
 LS.set(SESSION_KEY, null);
 draw();

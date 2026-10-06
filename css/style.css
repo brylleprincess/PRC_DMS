@@ -1,5 +1,5 @@
 /* PRC Document Management System - styles (light + dark theme) */
- 
+
 :root {
   --bg:#f6f7fb;
   --card:#fff;
@@ -444,7 +444,7 @@ td {
 .kv span {
   color: var(--mu);
 }
-.pver {
+.prev {
   height: 180px;
   border: 1px dashed var(--bd);
   border-radius: 10px;
@@ -520,7 +520,7 @@ td {
   padding-left: 52px;
   font-size: 12px;
 }
- 
+
 /* Red notice on the login screen (wrong password / no account) */
 .alert {
   background: color-mix(in srgb, var(--rd) 12%, transparent);
@@ -530,7 +530,7 @@ td {
   text-align: center;
   font-size: 13px;
 }
- 
+
 /* Form cards (Create user, Customize UI): title on its own line, small muted labels */
 .card-title {
   display: block;
@@ -543,7 +543,7 @@ td {
   color: var(--mu);
   font-size: 12px;
 }
- 
+
 /* Icons (replace emoji) */
 .i {
   flex: none;
@@ -560,10 +560,10 @@ td {
   align-items: center;
   gap: 3px;
 }
-.pver span {
+.prev span {
   text-align: center;
 }
- 
+
 /* Customize UI page */
 .gcust {
   display: grid;
@@ -624,7 +624,7 @@ td {
   gap: 8px;
 }
 .addrow input { flex: 1; }
- 
+
 /* Menu button: only on small screens (the sidebar is hidden there) */
 .btn.burger {
   display: none;
@@ -634,7 +634,7 @@ td {
     display: inline-flex;
   }
 }
- 
+
 /* Form errors and required marks */
 .ferr {
   color: var(--rd);
@@ -646,7 +646,7 @@ input.bad, select.bad {
   border-color: var(--rd) !important;
 }
 .req { color: var(--rd); }
- 
+
 /* Tables: long text wraps in its own column, dates and status never wrap */
 .reason {
   width: 240px;
@@ -655,7 +655,7 @@ input.bad, select.bad {
   overflow-wrap: anywhere;
 }
 .nw { white-space: nowrap; }
- 
+
 /* Upload form and file preview */
 input[type=file] { padding: 8px 12px; }
 .modal.wide { width: min(900px, 100%); }
@@ -666,9 +666,9 @@ input[type=file] { padding: 8px 12px; }
   border-radius: 10px;
   margin: 10px 0;
 }
- 
+
 /* Revisions and keyword search */
-.ver {
+.rev {
   cursor: pointer;
   margin-left: 6px;
   font-size: 10px;
@@ -708,4 +708,40 @@ input[type=file] { padding: 8px 12px; }
   border-color: transparent;
 }
 .kw small { opacity: .7; }
- 
+
+/* Ticking files: checkbox column, action bar, share popup */
+.cb { width: 34px; }
+input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--ac);
+  cursor: pointer;
+}
+.selbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--in);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+.selbar b { margin-right: auto; color: var(--int); }
+.sharelist {
+  margin: 8px 0;
+  padding-left: 18px;
+  max-height: 140px;
+  overflow: auto;
+}
+textarea {
+  width: 100%;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--card);
+  color: var(--tx);
+  font: 12px/1.4 monospace;
+  resize: none;
+}

@@ -14,7 +14,7 @@ function guardSession() {
 
   // Not signed in -> back to the login page
   if (!acct) {
-    location.replace("index.html");
+    location.replace("index.html" + location.search);
     return;
   }
 
