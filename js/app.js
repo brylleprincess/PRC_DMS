@@ -302,7 +302,7 @@ const pages = {
   },
   activity: () => `<h2>Recent Activity</h2><div class="card tw">${!log.length ? "<div class=empty>No activity yet — view, download or edit a file.</div>" : `<table><tr><th>WHO<th>ACTION<th>DOCUMENT<th>EMAIL / IP<th>WHEN</tr>${log.map((l) => {
     const u = user(l.u);
-    return `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${l.a}<td>${l.d}<td>${u.e} · ${u.ip}<td>${l.t}</tr>`;
+    return `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td class=nw>${l.a}<td>${esc(l.d)}<td>${u.e} · ${u.ip}<td class=nw>${when(l.t, true)}</tr>`;
   }).join("")}</table>`}</div>`,
   people: () => `<h2>People & Access</h2><div class="grid g2"><div class="card tw"><table><tr><th>NAME<th>EMAIL<th>USERNAME<th>ROLE<th>OFFICE / DIVISION<th>ACTIONS</tr>${U.map((u) => `<tr><td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${u.n}</div><td>${u.e}<td>${u.un || "—"}<td>${RN[u.r]}<td>${u.d}<td>${userBtns(u)}</tr>`).join("")}</table></div><div class=card><b class="card-title">Create user</b><p class=note>All fields are required.</p>${field("un", "Full name", "", "e.g. Juan Dela Cruz")}${field("ue", "Email", "", "name@prc.gov.ph")}${field("uc", "Contact number", "", "09XXXXXXXXX or +639XXXXXXXXX")}${field("uu", "Username", "", "3-20 letters, numbers, . or _")}${field("up", "Password", "password", "8+ characters with a letter and a number")}<label>Role</label><select id=ur style="width:100%" onchange="toggleOffice()"><option value=admin>Admin<option value=guest>Guest User<option value=sa>Super Admin</select><div id=uo><label>Office / Division</label><select id=ud style="width:100%">${OFFICES.map((o) => `<option>${o}`).join("")}</select></div><br><br><button class=btn onclick=addU()>Create user</button></div></div>`,
   settings: () => `<h2>Customize UI</h2><div class=gcust>${appearanceCard()}${categoryManager()}</div>`
@@ -656,9 +656,10 @@ function checkFields(list) {
 }
 
 // "Oct 2, 2026, 4:10 PM"
-function when(value) {
+// withSeconds = true gives "Oct 6, 2026, 8:41:10 AM" (used by the activity log)
+function when(value, withSeconds) {
   const d = new Date(value);
-  return isNaN(d) ? String(value) : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return isNaN(d) ? String(value) : d.toLocaleString([], { dateStyle: "medium", timeStyle: withSeconds ? "medium" : "short" });
 }
 
 // ---------- Uploaded files (kept in the browser's IndexedDB) ----------
