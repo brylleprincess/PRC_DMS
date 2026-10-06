@@ -58,7 +58,7 @@ const LOGO = "assets/prc-logo.png";
 // ---------- Shared storage ----------
 // Keeps documents, requests and activity in sync between the three role pages
 function saveState() {
-  LS.set(STORE_KEY, { D, req, log, nid, users: U, CAT, SETTINGS, shares });
+  LS.set(STORE_KEY, { D, req, log, nid, users: U, CAT, SETTINGS, shares, LIB });
 }
 function loadState() {
   const s = LS.get(STORE_KEY);
@@ -68,6 +68,7 @@ function loadState() {
   if (s.log) log = s.log;
   if (s.nid) nid = s.nid;
   if (s.shares) shares = s.shares;
+  if (s.LIB) LIB = s.LIB;
   if (s.users) U = typeof withBuiltIn === "function" ? withBuiltIn(s.users) : s.users;
   if (s.SETTINGS) SETTINGS = { ...DEFAULT_SETTINGS, ...s.SETTINGS };
   if (s.CAT) {
@@ -412,6 +413,7 @@ function pick(i, j) {
 const pages = {
   overview: () => `<h2>${R == "guest" ? "Welcome, Guest" : "Dashboard"}</h2>${sharedCard()}${dbar()}${R != "guest" ? stats() + `<div class="grid g2" style="margin-bottom:14px">${chart()}${topDocs()}</div>` : '<div class=card style="margin-bottom:14px">You have view-only access. Actions marked with a lock icon require approval: send a request to download, edit or delete.</div>'}<div class=card><b>Recent documents</b><br><small style="color:var(--mu)">Latest files added or updated</small>${rows(ovDocs().sort((a, b) => b.dt.localeCompare(a.dt)).slice(0, 5))}</div>`,
   search: () => searchPage(),
+  elibrary: () => libraryPage(),
   documents: () => `<h2>${cat == "All" ? "All Documents" : cat + (sub ? " › " + sub : "")}</h2><div class=card>${filters()}${rows(filt())}</div>`,
   analytics: () => `<h2>Analytics</h2>${dbar()}${stats()}<div class="grid g2">${chart()}${topDocs()}</div>`,
   requests: () => `<h2>Access Requests</h2><div class="card tw">${!req.length ? "<div class=empty>No requests yet.</div>" : `<table><tr><th>DOCUMENT<th>ACTION<th>REQUESTER<th>DATE & TIME REQUESTED<th>REASON<th>STATUS<th></tr>${req.filter((r) => R != "guest" || r.by == ACTOR.guest).map((r) => `<tr><td>${doc(r.doc)?.t}<td>${r.act}<td>${esc(user(r.by).n)}<td class=nw>${when(r.t)}<td class=reason>${esc(r.why)}<td class=nw><span class="tag ${r.st == "Approved" ? "Public" : r.st == "Denied" ? "Restricted" : "Internal"}">${r.st}</span><td class=nw>${R != "guest" && r.st == "Pending" ? `<button class="btn sm" onclick="decide(${r.id},'Approved')">Approve</button> <button class="btn g sm" onclick="decide(${r.id},'Denied')">Deny</button>` : ""}</tr>`).join("")}</table>`}</div>`,
@@ -1072,10 +1074,241 @@ function searchPage() {
   </div>`;
 }
 
+// ---------- E-Library: review materials (only Human Resource Development uploads) ----------
+const HR_OFFICE = "Human Resource Development Division";
+const MAX_LIB = 100 * 1024 * 1024;   // 100 MB per file
+let LIB = [];                        // the review materials
+let libQ = "", libTopic = "", libType = "";
+let libPending = [];                 // files chosen in the upload popup, not uploaded yet
+
+// Super Admin, and Admins who belong to Human Resource Development, can add and manage materials.
+// Everyone else can only look at them.
+function libCanUpload() {
+  if (SESSION.role === "sa") return true;
+  return R === "admin" && user(ACTOR[R]).d === HR_OFFICE;
+}
+
+const extOf = (name) => (name.includes(".") ? name.split(".").pop().toLowerCase() : "");
+const EXT_COLOR = { pdf: "#e86a6a", doc: "#4a82cc", docx: "#4a82cc", xls: "#3f9a6e", xlsx: "#3f9a6e", ppt: "#e07f45", pptx: "#e07f45", png: "#8e6fd1", jpg: "#8e6fd1", jpeg: "#8e6fd1", mp4: "#c9577a", mp3: "#c9577a" };
+const MIME = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", mp4: "video/mp4", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", txt: "text/plain" };
+const extBadge = (ext) => `<div class=ic style="background:${EXT_COLOR[ext] || "#7a7f9a"};font-size:${ext.length > 3 ? 9 : 11}px">${esc((ext || "file").slice(0, 4).toUpperCase())}</div>`;
+
+// Saves a Blob as a normal file download
+function saveBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
+}
+
+function libraryPage() {
+  const topics = [...new Set(LIB.map((m) => m.topic).filter(Boolean))].sort();
+  const types = [...new Set(LIB.map((m) => m.ext))].sort();
+  const total = LIB.reduce((n, m) => n + m.size, 0);
+  return `<h2>E-Library</h2><div class=card>
+    <div class=filters>
+      <input placeholder="Search review materials…" value="${esc(libQ)}" oninput="libQ = this.value; libRefresh()" style="max-width:280px">
+      <select onchange="libTopic = this.value; libRefresh()"><option value="">All topics${topics.map((t) => `<option ${libTopic === t ? "selected" : ""}>${esc(t)}`).join("")}</select>
+      <select onchange="libType = this.value; libRefresh()"><option value="">All file types${types.map((t) => `<option ${libType === t ? "selected" : ""}>${esc(t)}`).join("")}</select>
+      <span class=docn style="margin-left:auto">${LIB.length} material(s) · ${fmtSize(total)}</span>
+      ${libCanUpload() ? `<button class=btn onclick="libUploadModal()">${icon("plus", 14)} Upload materials</button>` : ""}
+    </div>
+    ${libCanUpload() ? "" : `<p class=note>Only the Human Resource Development Division can add review materials. You can view them here.</p>`}
+    <div id=libResults>${libRows()}</div></div>`;
+}
+
+// Only the results area is redrawn while typing, so the search box keeps its focus
+function libRefresh() {
+  $("#libResults").innerHTML = libRows();
+}
+
+function libRows() {
+  const text = libQ.toLowerCase();
+  const list = LIB.filter((m) => (!libTopic || m.topic === libTopic) && (!libType || m.ext === libType)
+    && (m.t + " " + m.fn + " " + m.topic + " " + m.desc).toLowerCase().includes(text));
+  if (!list.length) return `<div class=empty>${LIB.length ? "No materials match your search." : "No review materials yet."}</div>`;
+  const manage = libCanUpload();
+  return `<div class=tw><table><tr><th>MATERIAL<th>TOPIC<th>UPLOADED BY<th>DATE & TIME<th>DOWNLOADS<th>ACTIONS</tr>${list.map((m) => {
+    const u = user(m.by);
+    return `<tr><td><div class=fi>${extBadge(m.ext)}<div>${esc(m.t)}<small>${esc(m.fn)} · ${m.sz}${m.desc ? " · " + esc(m.desc) : ""}</small></div></div>
+      <td>${m.topic ? `<span class="tag Internal">${esc(m.topic)}</span>` : "—"}
+      <td><div class=own onclick=profile(${u.id})><span class=av>${ini(u.n)}</span>${esc(u.n)}</div>
+      <td class=nw>${when(m.dt)}<td>${m.dl}
+      <td class=nw><div class=act>
+        <button title="View" onclick="libView(${m.id})">${icon("eye")}</button>
+        <button title="${R == "guest" ? "Download (guests can view only)" : "Download"}" onclick="libDownload(${m.id})">${icon("download")}${R == "guest" ? icon("lock", 10) : ""}</button>
+        ${manage ? `<button title="Edit" onclick="libEdit(${m.id})">${icon("edit")}</button><button title="Delete" onclick="libDelete(${m.id})">${icon("trash")}</button>` : ""}
+      </div></tr>`;
+  }).join("")}</table></div>`;
+}
+
+// ----- Upload (several files at once, any file type) -----
+function libUploadModal() {
+  if (!libCanUpload()) return toast("Only Human Resource Development can upload review materials.");
+  libPending = [];
+  const topics = [...new Set(LIB.map((m) => m.topic).filter(Boolean))].sort();
+  modal(`<h3>Upload review materials</h3>
+    <div class=drop id=libdrop>
+      Drag files here, or
+      <label class="btn g sm" style="display:inline-flex;margin:0 4px">Choose files<input type=file id=libfiles multiple hidden onchange="libAddFiles(this.files); this.value = ''"></label>
+      <small style="display:block;margin-top:6px">PDF, Word, PowerPoint, Excel, images, video and more · up to 100 MB each</small>
+    </div>
+    <div class=ferr id=libfiles_e></div>
+    <div id=liblist></div>
+    <label>Topic (optional)</label>
+    <input id=libtopic list=libtopics placeholder="e.g. Licensure exam review"><datalist id=libtopics>${topics.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
+    <label>Description (optional, added to every file)</label>
+    <input id=libdesc placeholder="e.g. Reviewer for the October exam">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class=btn id=libgo onclick="doLibUpload()">Upload</button>
+    </div>`, true);
+  libDrawList();
+  const drop = $("#libdrop");
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); libAddFiles(e.dataTransfer.files); };
+}
+
+function libAddFiles(files) {
+  const skipped = [];
+  [...files].forEach((f) => {
+    if (f.size > MAX_LIB) return skipped.push(f.name + " (over 100 MB)");
+    if (libPending.some((p) => p.name === f.name && p.size === f.size && p.lastModified === f.lastModified)) return;
+    libPending.push(f);
+  });
+  libDrawList();
+  setErr("libfiles", skipped.length ? "Not added: " + skipped.join(", ") : "");
+}
+
+function libRemove(i) {
+  libPending.splice(i, 1);
+  libDrawList();
+}
+
+function libDrawList() {
+  $("#liblist").innerHTML = libPending.map((f, i) => `<div class=libitem>${extBadge(extOf(f.name))}
+    <div class=libname>${esc(f.name)}<small>${fmtSize(f.size)}</small></div>
+    <button class="btn g sm" title="Remove" onclick="libRemove(${i})">${icon("x", 12)}</button></div>`).join("");
+  $("#libgo").textContent = libPending.length ? "Upload " + libPending.length + " file(s)" : "Upload";
+}
+
+async function doLibUpload() {
+  if (!libCanUpload()) return toast("Only Human Resource Development can upload review materials.");
+  if (!libPending.length) return setErr("libfiles", "Choose at least one file.");
+  const topic = $("#libtopic").value.trim(), desc = $("#libdesc").value.trim();
+  const btn = $("#libgo");
+  btn.disabled = true;
+  let done = 0;
+  const failed = [];
+  let nextId = Math.max(0, ...LIB.map((m) => m.id)) + 1;
+
+  for (const f of libPending) {
+    btn.textContent = "Uploading " + (done + failed.length + 1) + " of " + libPending.length + "…";
+    try {
+      await fileSave("lib:" + nextId, f);   // the file is kept in the browser (IndexedDB)
+    } catch (e) {
+      failed.push(f.name);
+      continue;
+    }
+    const m = { id: nextId++, t: f.name.replace(/\.[^.]+$/, "") || f.name, fn: f.name, ext: extOf(f.name), size: f.size, sz: fmtSize(f.size), topic, desc, by: ACTOR[R], dt: new Date().toISOString(), dl: 0 };
+    LIB.unshift(m);
+    addLog("uploaded to E-Library", m);
+    done++;
+  }
+  libPending = [];
+  closeM();
+  toast(done + " file(s) uploaded" + (failed.length ? ". Could not save: " + failed.join(", ") : ""));
+  render();
+}
+
+// ----- View, download, edit, delete -----
+async function libView(id) {
+  const m = LIB.find((x) => x.id === id);
+  const stored = await fileGet("lib:" + id);
+  if (!stored) return toast("This file is not stored in this browser.");
+  m.v = (m.v || 0) + 1;
+  const type = stored.type || MIME[m.ext] || "";
+  previewUrl = URL.createObjectURL(stored.type ? stored : new Blob([stored], { type }));
+  let body = `<div class=prev><span>${extBadge(m.ext)}<br>No preview for this file type.<br>Download it to open it.</span></div>`;
+  if (type === "application/pdf" || type === "text/plain") body = `<iframe class=pdfview src="${previewUrl}"></iframe>`;
+  else if (type.startsWith("image/")) body = `<img src="${previewUrl}" style="max-width:100%;border-radius:10px">`;
+  else if (type.startsWith("video/")) body = `<video src="${previewUrl}" controls style="width:100%;border-radius:10px"></video>`;
+  else if (type.startsWith("audio/")) body = `<audio src="${previewUrl}" controls style="width:100%"></audio>`;
+  addLog("viewed (E-Library)", m);
+  modal(`<h3>${esc(m.t)}</h3>${body}
+    <p class=note style="margin-top:8px">${esc(m.fn)} · ${m.sz}${m.topic ? " · " + esc(m.topic) : ""}</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn g" onclick=closeM()>Close</button>
+      ${R == "guest" ? "" : `<button class=btn onclick="libDownload(${id})">${icon("download", 14)} Download</button>`}
+    </div>`, true);
+}
+
+async function libDownload(id) {
+  if (R == "guest") return toast("Guests can view review materials but cannot download them.");
+  const m = LIB.find((x) => x.id === id);
+  const stored = await fileGet("lib:" + id);
+  if (!stored) return toast("This file is not stored in this browser.");
+  saveBlob(stored, m.fn);   // the original file, as it was uploaded
+  m.dl++;
+  addLog("downloaded (E-Library)", m);
+  toast("Downloading " + m.fn);
+  render();
+}
+
+function libEdit(id) {
+  if (!libCanUpload()) return;
+  const m = LIB.find((x) => x.id === id);
+  modal(`<h3>Edit material</h3>
+    ${field("lt", "Title", "", "", m.t)}
+    <label>Topic (optional)</label><input id=lp value="${esc(m.topic)}">
+    <label>Description (optional)</label><input id=ld value="${esc(m.desc)}">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class=btn onclick="libSave(${id})">Save changes</button>
+    </div>`);
+}
+
+function libSave(id) {
+  const m = LIB.find((x) => x.id === id), title = $("#lt").value.trim();
+  if (!title) return setErr("lt", "Enter a title.");
+  m.t = title;
+  m.topic = $("#lp").value.trim();
+  m.desc = $("#ld").value.trim();
+  addLog("edited (E-Library)", m);
+  closeM();
+  toast("Saved changes");
+  render();
+}
+
+function libDelete(id) {
+  if (!libCanUpload()) return;
+  const m = LIB.find((x) => x.id === id);
+  modal(`<h3>Delete this material?</h3>
+    <p>Delete <b>${esc(m.t)}</b> from the E-Library? This cannot be undone.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn g" onclick=closeM()>Cancel</button>
+      <button class="btn r" onclick="libDoDelete(${id})">Delete</button>
+    </div>`);
+}
+
+function libDoDelete(id) {
+  const m = LIB.find((x) => x.id === id);
+  addLog("deleted from E-Library", m);
+  LIB = LIB.filter((x) => x.id !== id);
+  fileDelete("lib:" + id).catch(() => {});
+  closeM();
+  toast("Deleted " + m.t);
+  render();
+}
+
 // ---------- Sidebar, header and main render ----------
 function nav() {
   const sa = R == "sa", ad = R != "guest", b = (p, i, l, c) => `<button class="${P == p && cat == "All" || P == p && p != "documents" ? "on" : ""}" onclick="go('${p}')">${i} ${l}${c != null ? `<b>${c}</b>` : ""}</button>`;
-  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div><h6>WORKSPACE</h6>${ad ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${ad ? b("trash", icon("trash"), "Recycle Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
+  return `<div class=brand><img class=seal src="${LOGO}" alt="PRC"><span id=bn>${esc(SETTINGS.name.toUpperCase())}</span></div><div class=nav>${b("overview", icon("grid"), "Overview")}${b("documents", icon("file"), "All Documents", D.filter((d) => !d.del).length)}${b("elibrary", icon("book"), "E-Library", LIB.length)}<h6>CATEGORIES</h6><div class=cats>${Object.keys(CAT).map((c, i) => `<button class="${cat == c && P == "documents" && !sub ? "on" : ""}" onclick="tgl(${i})">${icon("folder")} ${esc(c)}${CAT[c].length ? `<b>${icon(op[c] ? "chevronDown" : "chevronRight", 12)}</b>` : ""}</button>${op[c] ? CAT[c].map((x, j) => `<button class="sub ${cat == c && sub == x && P == "documents" ? "on" : ""}" onclick="pick(${i},${j})">${icon("file", 13)} ${esc(x)}</button>`).join("") : ""}`).join("")}</div><h6>WORKSPACE</h6>${ad ? b("analytics", icon("chart"), "Analytics") : ""}${b("requests", icon("key"), "Requests", req.filter((r) => r.st == "Pending").length)}${ad ? b("trash", icon("trash"), "Recycle Bin", D.filter((d) => d.del).length) : ""}${sa ? b("activity", icon("clock"), "Recent Activity") + b("people", icon("users"), "People & Access") + b("settings", icon("sliders"), "Customize UI") : ""}</div>`;
 }
 function go(p, k) {
   P = p;
@@ -1277,6 +1510,6 @@ window.addEventListener("storage", (e) => {
 });
 render();
 
-
+// Opened from a shared link (...?doc=5)? Show that file once signed in.
 const sharedId = new URLSearchParams(location.search).get("doc");
 if (AUTH && sharedId && doc(+sharedId) && !doc(+sharedId).del) act(+sharedId, "view");

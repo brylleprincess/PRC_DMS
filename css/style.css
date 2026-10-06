@@ -745,3 +745,38 @@ textarea {
   font: 12px/1.4 monospace;
   resize: none;
 }
+
+/* E-Library */
+.drop {
+  border: 2px dashed var(--bd);
+  border-radius: 12px;
+  padding: 18px;
+  text-align: center;
+  color: var(--mu);
+}
+.drop.over {
+  border-color: var(--ac);
+  background: var(--in);
+}
+#liblist {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.libitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bd);
+}
+.libname {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.libname small {
+  display: block;
+  color: var(--mu);
+  font-size: 11px;
+}
